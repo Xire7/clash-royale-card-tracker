@@ -57,6 +57,5 @@ def clock_detection_test(path):
 
 
 
-# sample_clock_colors('red_clock_001.png')
-clock_detection_test('red_clock_003.png')
-# sample_clock_colors('red_clock_004.png')
+# sample_clock_colors('red_clock_006.png')
+clock_detection_test('red_clock_006.png')

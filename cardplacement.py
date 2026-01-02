@@ -68,25 +68,26 @@ class CardPlacementDetector:
 
     def detect_opponent_clocks(self, frame, show_debug=False):
         """
-        Enemy clock detection with openCV for circular gold clocks with red pixels
+        Enemy clock detection with openCV. detect high white concentrations with small red presence
         """
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
-        # gold
-        lower_gold = np.array([15, 150, 80])
-        upper_gold = np.array([30, 255, 255])
-        gold_mask = cv2.inRange(hsv, lower_gold, upper_gold)
+        # clock white
+        lower_white = np.array([2, 0, 200])
+        upper_white = np.array([3, 13, 217])
+        white_mask = cv2.inRange(hsv, lower_white, upper_white)
         
         # red
         lower_red1 = np.array([0, 80, 50])
         upper_red1 = np.array([10, 255, 255])
         red_mask = cv2.inRange(hsv, lower_red1, upper_red1)
         
-        # close gold ring gaps
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        gold_closed = cv2.morphologyEx(gold_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        # clean white mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7,7))
+        white_mask = cv2.dilate(white_mask, kernel, iterations=3)
+        # white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN, kernel, iterations=1)
         
-        contours, _ = cv2.findContours(gold_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # debug images
         debug_result = frame.copy()
@@ -109,58 +110,59 @@ class CardPlacementDetector:
             else:
                 circularity = 0
             
-            # check red inside
-            red_roi = red_mask[y:y+h, x:x+w]
-            red_count = np.sum(red_roi > 0)
-            
-            # check each filter
-            area_pass = 400 < area < 6000
+            area_pass = 300 < area < 2000
             aspect_pass = 0.6 < aspect < 1.5
-            red_pass = red_count > 100
-            circ_pass = circularity > 0.7
+            circ_pass = circularity > 0.5
 
-            # labels on debug images
-            if area_pass and aspect_pass:
-                if red_pass and circ_pass:
-                    # all pass - GREEN
+            if area_pass and aspect_pass and circ_pass:
+                # check for red presence inside contour
+                margin = 10
+                check_x = max(0, x - margin)
+                check_y = max(0, y - margin)
+                check_w = min(w + 2*margin, frame.shape[1] - check_x)
+                check_h = min(h + 2*margin, frame.shape[0] - check_y)
+
+                red_roi = red_mask[check_y:check_y+check_h, check_x:check_x+check_w]
+                red_count = np.sum(red_roi > 0)
+                red_ratio = red_count / (check_w * check_h)
+
+                red_pass = 0.03 < red_ratio < 0.5
+
+                if red_pass:
+                    # deployment detected
                     clock_regions.append((x, y, w, h))
                     cv2.rectangle(debug_result, (x, y), (x+w, y+h), (0, 255, 0), 3)
-                    cv2.putText(debug_result, f"CLOCK {len(clock_regions)}", (x, y-10),
+                    cv2.putText(debug_result, f"DEPLOY {len(clock_regions)}", (x, y-10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    cv2.putText(debug_result, f"A:{area:.0f} R:{red_count} C:{circularity:.2f}", 
+                    cv2.putText(debug_result, f"A:{area:.0f} R:{red_ratio:.2%} C:{circularity:.2f}", 
                             (x, y+h+15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
                 else:
-                    # failed red or circularity - RED
-                    reasons = []
-                    if not red_pass:
-                        reasons.append(f"R:{red_count}")
-                    if not circ_pass:
-                        reasons.append(f"C:{circularity:.2f}")
-                    
+                    # white region but no/too much red
                     cv2.rectangle(debug_result, (x, y), (x+w, y+h), (0, 0, 255), 2)
-                    cv2.putText(debug_result, " ".join(reasons), (x, y-10),
+                    cv2.putText(debug_result, f"R:{red_ratio:.2%}", (x, y-10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
             else:
-                # failed area or aspect - YELLOW
+                # failed basic filters
                 reasons = []
                 if not area_pass:
-                    reasons.append(f"ID: {i}")
                     reasons.append(f"A:{area:.0f}")
                 if not aspect_pass:
                     reasons.append(f"AS:{aspect:.2f}")
+                if not circ_pass:
+                    reasons.append(f"C:{circularity:.2f}")
                 
-                cv2.rectangle(debug_result, (x, y), (x+w, y+h), (0, 165, 255), 1)
-                cv2.putText(debug_result, " ".join(reasons), (x, y-5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 165, 255), 1)
+                if reasons:  # only show if there was some white detected
+                    cv2.rectangle(debug_result, (x, y), (x+w, y+h), (0, 165, 255), 1)
+                    cv2.putText(debug_result, " ".join(reasons), (x, y-5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 165, 255), 1)
         
-        print(f"{len(clock_regions)} CLOCKS DETECTED\n")
+        print(f"{len(clock_regions)} DEPLOYMENTS DETECTED\n")
         
         if show_debug:
-            cv2.imshow("1. Gold Mask (original)", gold_mask)
-            cv2.imshow("2. Gold Mask (closed)", gold_closed)
-            cv2.imshow("3. Red Mask", red_mask)
-            cv2.imshow("4. ALL Contours (blue)", debug_all_contours)  # NEW!
-            cv2.imshow("5. Result (filtered)", debug_result)
+            cv2.imshow("1. White Mask", white_mask)
+            cv2.imshow("2. Red Mask", red_mask)
+            cv2.imshow("3. ALL White Contours (blue)", debug_all_contours)
+            cv2.imshow("4. Result (filtered)", debug_result)
             cv2.waitKey(1)
         
         return clock_regions

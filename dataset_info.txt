@@ -1,0 +1,6 @@
+Image Collection
+
+
+90/10 split on elongated / post-deployment troop sprites
+
+45 regular spawn, 45 gold spawn, 10 normal troop
