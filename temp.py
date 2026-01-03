@@ -1,5 +1,5 @@
 import cv2
-import cardplacement
+import detector
 import numpy as np
 
 def sample_clock_colors(image_path):
@@ -40,7 +40,7 @@ def sample_clock_colors(image_path):
 def clock_detection_test(path):
     img = cv2.imread(path)
 
-    detector = cardplacement.CardPlacementDetector(None)
+    detector = detector.DeploymentDetector(None)
 
     clocks = detector.detect_opponent_clocks(img, show_debug=True)
 
