@@ -209,3 +209,5 @@ __marimo__/
 # any images
 
 *.png
+
+crop_to_square.py

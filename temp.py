@@ -40,22 +40,15 @@ def sample_clock_colors(image_path):
 def clock_detection_test(path):
     img = cv2.imread(path)
 
-    detector = detector.DeploymentDetector(None)
+    detect = detector.DeploymentDetector(None, False)
 
-    clocks = detector.detect_opponent_clocks(img, show_debug=True)
+    detections, white_mask, red_mask = detect.detect_opponent_clocks(img, show_debug=True)
 
+    print(f"Found {len(detections)} red clocks")
 
-    print(f"Found {len(clocks)} red clocks")
+    print("Detections:", detections)
 
-    # visualization debugging
-
-    for (x, y, w, h) in clocks:
-        cv2.rectangle(img, (x,y), (x+w, y+h), (0, 255, 0), 2)
-
-    cv2.imshow("Detected Clocks", img)
     cv2.waitKey(0)
 
-
-
 # sample_clock_colors('red_clock_006.png')
-clock_detection_test('red_clock_006.png')
+clock_detection_test('red_clock_008.png')

@@ -13,7 +13,7 @@ class DeploymentDetector:
         self.save_detections = save_detections
         self.detection_count = 0
         self.last_detection_time = 0
-        self.detection_cooldown = 1.0
+        self.detection_cooldown = 0.3
 
         if save_detections:
             self.output_dir = f"detections/detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -37,8 +37,8 @@ class DeploymentDetector:
         red_mask = cv2.inRange(hsv, lower_red1, upper_red1)
         
         # clean white mask
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7,7))
-        white_mask = cv2.dilate(white_mask, kernel, iterations=3)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
+        white_mask = cv2.dilate(white_mask, kernel, iterations=2)
         contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # debug images
@@ -62,13 +62,13 @@ class DeploymentDetector:
             else:
                 circularity = 0
             
-            area_pass = 1000 < area < 1600
+            area_pass = 400 < area < 800
             aspect_pass = 0.6 < aspect < 1.5
-            circ_pass = circularity > 0.5
+            circ_pass = circularity > 0.40
 
             if area_pass and aspect_pass and circ_pass:
                 # check for red presence inside contour
-                margin = 10
+                margin = 2
                 check_x = max(0, x - margin)
                 check_y = max(0, y - margin)
                 check_w = min(w + 2*margin, frame.shape[1] - check_x)
@@ -78,7 +78,7 @@ class DeploymentDetector:
                 red_count = np.sum(red_roi > 0)
                 red_ratio = red_count / (check_w * check_h)
 
-                red_pass = 0.015 < red_ratio < 0.5
+                red_pass = 0.03 < red_ratio < 0.20 # should be only a little red
 
                 if red_pass:
                     # deployment detected
@@ -126,20 +126,17 @@ class DeploymentDetector:
         """
         Given clock bounding box, extract the troop deploy region
         """
+        OFFSET_Y = 10 # adjusting region upward to frame above half of the clock
 
         x, y, w, h = clock_bbox
         
         # bounding box: centered on clock, extends upward, includes half of the clock
 
-        troop_w = int(w * 1.5)
-        troop_h = int(h * 3.0)
+        troop_w, troop_h = 170, 170
 
-        troop_x = max(0, x - (troop_w - w) // 2)
-        troop_y = max(0, y - int(h*2.5))
-
-        # bound check
-        troop_w = min(troop_w, frame.shape[1] - troop_x)
-        troop_h = min(troop_h, frame.shape[0] - troop_y)
+        clock_center = x + (w // 2)
+        troop_x = max(0, clock_center - (troop_w // 2))
+        troop_y = max(0, (y + OFFSET_Y) - troop_h) # extend downward by offset Y
 
         troop_region = frame[troop_y:troop_y+troop_h, troop_x:troop_x+troop_w]
 
@@ -153,7 +150,7 @@ class DeploymentDetector:
         pass
 
 
-    def run(self, monitor_region=None):
+    def run(self, monitor_region=None, show_debug=False):
         """
         Real-time detection with overlay
 
@@ -182,7 +179,6 @@ class DeploymentDetector:
 
 
         paused = False
-        show_debug = True
         fps_times = []
 
         while True:
@@ -331,7 +327,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    monitor_region = None
+    monitor_region = {'left': 1043, 'top': 32, 'width': 760, 'height': 1360} # empirical full screen region for 1920x1080
 
     if args.select_region:
         monitor_region = select_region()
