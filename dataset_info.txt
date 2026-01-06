@@ -4,3 +4,48 @@ Image Collection
 90/10 split on elongated / post-deployment troop sprites
 
 45 regular spawn, 45 gold spawn, 10 normal troop
+
+
+Dataset Counts:
+
+Ideal Train: 56G/24N (80 total)
+Ideal Val: 14G/6N (20 total)
+
+Cannon
+==============
+Normal: 63
+Gold: 72
+Evo: 1
+
+Hog Rider
+==============
+Normal: 30
+Gold: 179
+
+Ice Golem
+==============
+Normal: 118
+Gold: 71
+
+Ice Spirit
+==============
+Normal: 60
+Gold: 124
+
+Musketeer
+==============
+Normal: 32
+Gold: 86
+Evo: 0
+Hero: 22
+
+Skeletons
+==============
+Normal: 78
+Gold: 75
+Evo: 14
+
+
+
+
+Sarah wears size mediums for jackets

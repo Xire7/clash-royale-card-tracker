@@ -126,7 +126,7 @@ class DeploymentDetector:
         """
         Given clock bounding box, extract the troop deploy region
         """
-        OFFSET_Y = 10 # adjusting region upward to frame above half of the clock
+        OFFSET_Y = 10 # adjusting region upward to frame below/at half of the clock
 
         x, y, w, h = clock_bbox
         
