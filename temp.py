@@ -1,6 +1,26 @@
 import cv2
 import detector
 import numpy as np
+import torch
+import sys
+
+print("Python version:", sys.version)
+print("PyTorch version:", torch.__version__)
+print("CUDA available:", torch.cuda.is_available())
+
+if torch.cuda.is_available():
+    print("CUDA version:", torch.version.cuda)
+    print("Device count:", torch.cuda.device_count())
+    print("Current device:", torch.cuda.current_device())
+    print("Device name:", torch.cuda.get_device_name(0))
+else:
+    print("\nCUDA is NOT available. Possible reasons:")
+    print("1. PyTorch was installed without CUDA support (CPU-only version)")
+    print("2. NVIDIA drivers are not properly installed")
+    print("3. CUDA toolkit version mismatch")
+    print("\nTo fix, reinstall PyTorch with CUDA support:")
+    print("pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
+    print("(Use cu118, cu121, or cu124 depending on your CUDA version)")
 
 def sample_clock_colors(image_path):
     """
@@ -51,4 +71,4 @@ def clock_detection_test(path):
     cv2.waitKey(0)
 
 # sample_clock_colors('red_clock_006.png')
-clock_detection_test('red_clock_008.png')
+# clock_detection_test('red_clock_008.png')

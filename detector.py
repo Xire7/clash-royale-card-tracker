@@ -1,24 +1,82 @@
 import cv2
 import torch
+import torch.nn as nn
 import numpy as np
 import time
 import os
 from datetime import datetime
 import mss
 import argparse
+from torchvision import models, transforms
+from PIL import Image
+
+def load_classifier(model_path, device='cuda'):
+    print(torch.cuda.is_available())
+    if device == 'cuda' and not torch.cuda.is_available():
+        print("WARNING: CUDA requested but not available, falling back to CPU")
+        device = 'cpu'
+        
+    # load checkpoint
+    checkpoint = torch.load(model_path, map_location=device)
+    class_names = checkpoint['class_names']
+    num_classes = len(class_names)
+
+    # recreate model architecture
+    model = models.mobilenet_v2(weights=None)
+    model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+
+    # load weights
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model = model.to(device)
+    model.eval()
+
+    # mimic validation transforms
+    transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    print(f"✓ Model loaded successfully on {device.upper()}")
+    print(f"✓ Classes: {class_names}")
+    return model, class_names, transform
 
 class DeploymentDetector:
-    def __init__(self, card_classifier_model, save_detections=True):
-        self.card_classifier_model = card_classifier_model
+    def __init__(self, model_path=None, save_detections=True, device='cuda'):
         self.save_detections = save_detections
         self.detection_count = 0
         self.last_detection_time = 0
         self.detection_cooldown = 0.3
+        
+        # Auto-detect CUDA
+        if device == 'cuda' and not torch.cuda.is_available():
+            print("WARNING: CUDA not available, using CPU")
+            device = 'cpu'
+        self.device = device
+
+        # persistent overlay
+        self.detection_history = [] # list of (bbox, card, confidence, frames_remaining)
+        self.persistence_frames = 90
 
         if save_detections:
             self.output_dir = f"detections/detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             os.makedirs(self.output_dir, exist_ok=True)
             print(f"Detections will be saved to: {self.output_dir}")
+
+        
+        print("Device is:", device)
+        
+        if model_path and os.path.exists(model_path):
+            self.model, self.class_names, self.transform = load_classifier(model_path, device)
+            self.classify_enabled = True
+        else:
+            self.model = None
+            self.class_names = None
+            self.transform = None
+            self.classify_enabled = False
+            if model_path:
+                print(f"Warning: model path '{model_path}' not found. Classifier disabled")
 
     def detect_opponent_clocks(self, frame, show_debug=False):
         """
@@ -147,7 +205,30 @@ class DeploymentDetector:
         """
         Use CNN model to classify placed troop in region
         """
-        pass
+        if not self.classify_enabled or troop_region.size == 0:
+            return "Unknown", 0.0
+        
+        try:
+            # convert BGR to RGB
+            rgb_image = cv2.cvtColor(troop_region, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(rgb_image)
+
+            # apply transform
+            input_tensor = self.transform(pil_image).unsqueeze(0).to(self.device)
+
+            # inference
+            with torch.no_grad():
+                outputs = self.model(input_tensor)
+                probabilities = torch.nn.functional.softmax(outputs, dim=1)
+                confidence, predicted_idx = torch.max(probabilities, 1)
+
+                predicted_class = self.class_names[predicted_idx.item()]
+                confidence_score = confidence.item()
+            
+            return predicted_class, confidence_score
+        except Exception as e:
+            print(f"Classification error: {e}")
+            return "Error", 0.0
 
 
     def run(self, monitor_region=None, show_debug=False):
@@ -166,9 +247,10 @@ class DeploymentDetector:
         else:
             monitor = monitor_region
 
-        print("REAL-TIME CLOCK DETECTION")
+        print("REAL-TIME CLOCK DETECTION" + (" + CLASSIFICATION" if self.classify_enabled else ""))
         print("=" * 50)
         print(f"Monitoring region: {monitor}")
+        print(f"Device: {self.device.upper()}")
         print("\nControls:")
         print("  SPACE - Pause/Resume")
         print("  S - Save current detections manually")
@@ -187,51 +269,67 @@ class DeploymentDetector:
                 frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
 
                 current_time = time.time()
-                detections, white_mask, red_mask = self.detect_opponent_clocks(frame)
 
-                # create overlay
+                # create overlay with all persistent detections
                 overlay = frame.copy()
 
-                for detection in detections:
-                    x, y, w, h = detection['bbox']
-                    red_ratio = detection['red_ratio']
+                stored_predictions = []
+                # only classify and add to history at the end. create these bounding boxes first too
+                if self.save_detections and (current_time - self.last_detection_time) > self.detection_cooldown:
+                    detections, white_mask, red_mask = self.detect_opponent_clocks(frame)
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
 
-                    troop_region, (tx, ty, tw, th) = self.extract_troop_region(frame, (x,y,w,h))
-
-                    # draw clock bounding box (yellow)
-
-                    cv2.rectangle(overlay, (x, y), (x+w, y+h), (0, 255, 255), 2)
-                    cv2.putText(overlay, "CLOCK", (x, y-10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-                    
-                    # draw troop region bounding box (green)
-
-                    cv2.rectangle(overlay, (tx, ty), (tx+tw, ty+th), (0, 255, 0), 3)
-                    cv2.putText(overlay, f"TROOP REGION", (tx, ty-10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    cv2.putText(overlay, f"Red: {red_ratio:.1%}", (tx, ty+th+20),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                    
-                    # TODO: simple cooldown per detection, will need to update later
-                    if self.save_detections and (current_time - self.last_detection_time) > self.detection_cooldown:
+                    for detection in detections:
                         self.detection_count += 1
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
+                        x, y, w, h = detection['bbox']
+                        red_ratio = detection['red_ratio']
+                        frames_remaining = 90
+                        troop_region, (tx, ty, tw, th) = self.extract_troop_region(frame, (x,y,w,h))
+                        if self.classify_enabled:
+                            predicted_card, confidence = self.classify_card(troop_region)
+                        
+                        self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, predicted_card, confidence, red_ratio, frames_remaining)
+                        stored_predictions.append({
+                            'clock_bbox': (x, y, w, h),
+                            'troop_bbox': (tx, ty, tw, th),
+                            'card': predicted_card,
+                            'confidence': confidence,
+                            'red_ratio': red_ratio,
+                            'frames_remaining': frames_remaining - 1
+                        })
+                        # console log
+                        log_msg = f"[{timestamp}] Detection #{self.detection_count}"
+                        if self.classify_enabled:
+                            log_msg += f" | Card: {predicted_card.upper()} ({confidence:.1%})"
+                        log_msg += f" | Red: {red_ratio:.1%}"
+                        print(log_msg)
 
-                        # save full frame w/ overlay
+                        self.last_detection_time = current_time
+
                         full_path = os.path.join(self.output_dir, f"full_{self.detection_count:03d}_{timestamp}.png")
                         cv2.imwrite(full_path, overlay)
-
-                        # save troop region (feed to CNN later)
                         troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_{timestamp}.png")
-                        cv2.imwrite(troop_path, troop_region)
-                        
-                        self.last_detection_time = current_time
-                        print(f"[{timestamp}] Detection #{self.detection_count} saved (Red: {red_ratio:.1%})")
-                
+                        cv2.imwrite(troop_path, troop_region)      
+                        self.last_detection_time = current_time  
+
+                for det in self.detection_history:
+                    x, y, w, h = det['clock_bbox']
+                    tx, ty, tw, th = det['troop_bbox']
+
+                    self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, det['card'], det['confidence'], det['red_ratio'], det['frames_remaining'])
+
+                    # decrement frame counter
+                    det['frames_remaining'] -= 1
+                      
+                # remove expired detections
+                self.detection_history = [d for d in self.detection_history if d['frames_remaining'] > 0]
+
+                self.detection_history.extend(stored_predictions)
+                # info overlay
                 info_y = 30
-                cv2.putText(overlay, f"Detections: {len(detections)}", (10, info_y),
+                cv2.putText(overlay, f"Active: {len(self.detection_history)}", (10, info_y),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                cv2.putText(overlay, f"Total Saved: {self.detection_count}", (10, info_y + 30),
+                cv2.putText(overlay, f"Saved: {self.detection_count}", (10, info_y + 30),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 
                 # calculate FPS
@@ -243,8 +341,9 @@ class DeploymentDetector:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 
                 # status
-                status_color = (0, 255, 0) if len(detections) > 0 else (255, 255, 255)
-                cv2.putText(overlay, "DETECTING..." if len(detections) > 0 else "Waiting...",
+                status_color = (0, 255, 0) if len(self.detection_history) > 0 else (255, 255, 255)
+                status_text = f"Tracking {len(self.detection_history)}" if len(self.detection_history) > 0 else "Waiting..."
+                cv2.putText(overlay, status_text,
                             (10, info_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
                 
                 cv2.imshow("Deployment Detection", overlay)
@@ -266,10 +365,9 @@ class DeploymentDetector:
                 break
             elif key == ord(' '):
                 paused = not paused
-                print("PPAUSED" if paused else "RESUMED")
+                print("PAUSED" if paused else "RESUMED")
             elif key == ord('s') and not paused:
                 # manual save
-
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
                 manual_path = os.path.join(self.output_dir, f"manual_{timestamp}.png")
                 cv2.imwrite(manual_path, frame)
@@ -278,14 +376,36 @@ class DeploymentDetector:
             elif key == ord('d'):
                 show_debug = not show_debug
                 if not show_debug:
-                    cv2.destroyWindow("White Mask")
-                    cv2.destroyWindow("Red Mask")
+                    cv2.destroyWindow("1. White Mask")
+                    cv2.destroyWindow("2. Red Mask")
+                    cv2.destroyWindow("3. ALL White Contours (blue)")
+                    cv2.destroyWindow("4. Result (filtered)")
                 print(f"Debug windows: {'ON' if show_debug else 'OFF'}")
         
         cv2.destroyAllWindows()
-        print(f"\n Total detections saved: {self.detection_count}")
+        print(f"\nTotal detections saved: {self.detection_count}")
         if self.save_detections:
             print(f"Detections are saved in folder: {self.output_dir}")
+    
+    def _draw_bounding_box(self, overlay, x, y, w, h, tx, ty, tw, th, predicted_card, confidence, red_ratio, frames_remaining):
+        # fade effect
+        alpha = frames_remaining / self.persistence_frames
+        color_intensity = int(255 * alpha)
+
+        # draw clock bbox
+        cv2.rectangle(overlay, (x, y), (x+w, y+h), (0, color_intensity, color_intensity), 2)
+        
+        # draw troop region bbox
+        cv2.rectangle(overlay, (tx, ty), (tx+tw, ty+th), (0, color_intensity, 0), 3)
+
+        if self.classify_enabled:
+            cv2.putText(overlay, f"{predicted_card.upper()}", (tx, ty-15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, color_intensity, 0), 3)
+            cv2.putText(overlay, f"{confidence:.1%}", (tx, ty+th+20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, color_intensity, 0), 2)
+        else:
+            cv2.putText(overlay, f"TROOP", (tx, ty-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, color_intensity, 0), 2)
 
 
 def select_region():
@@ -303,7 +423,7 @@ def select_region():
     roi = cv2.selectROI("Select Region of Interest (ROI)", frame, fromCenter=False, showCrosshair=True)
     cv2.destroyWindow("Select Region of Interest (ROI)")
 
-    if roi[2] > 0 and roi[3] > 0:  # Valid selection
+    if roi[2] > 0 and roi[3] > 0:  # valid
         x, y, w, h = roi
         region = {
             'left': int(x),
@@ -322,8 +442,9 @@ def select_region():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Real-time card deployment detector')
     parser.add_argument('--no-save', action='store_true', help='Do not save detections to disk')
-    parser.add_argument('--region', type=str, help='Monitor region a "x,y,width,height" (e.g. "100,100,800,600")')
+    parser.add_argument('--region', type=str, help='Monitor region as "x,y,width,height" (e.g. "100,100,800,600")')
     parser.add_argument('--select-region', action='store_true', help='Select region interactively')
+    parser.add_argument('--model', type=str, help='Path to trained model .pth file', default=None)
 
     args = parser.parse_args()
 
@@ -342,8 +463,7 @@ if __name__ == "__main__":
             }
             print(f"Using custom monitor region: {monitor_region}")
         except:
-            print("Invalid region format. Using full screen.")
+            print("Invalid region format. Using default region.")
     
-    tester = DeploymentDetector(card_classifier_model=None, save_detections=not args.no_save)
-    tester.run(monitor_region=monitor_region)
-
+    detector = DeploymentDetector(model_path=args.model, save_detections=not args.no_save, device='cuda') # gigachad GPU user
+    detector.run(monitor_region=monitor_region)
