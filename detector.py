@@ -10,6 +10,20 @@ import argparse
 from torchvision import models, transforms
 from PIL import Image
 
+# empirical full screen constants
+MONITOR_LEFT = 1043
+MONITOR_TOP = 32
+MONITOR_WIDTH = 760
+MONITOR_HEIGHT = 1360
+
+# cycle indicator color constants
+OK_COLOR = (115,179,59) # 2-4 cards away
+CLOSE_COLOR = (48, 119, 186) # 1 card away
+IN_CYCLE_COLOR = (59, 59, 179)
+
+# text color
+WHITE_COLOR = (255,255,255)
+
 def load_classifier(model_path, device='cuda'):
     print(torch.cuda.is_available())
     if device == 'cuda' and not torch.cuda.is_available():
@@ -37,9 +51,6 @@ def load_classifier(model_path, device='cuda'):
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
-
-    print(f"✓ Model loaded successfully on {device.upper()}")
-    print(f"✓ Classes: {class_names}")
     return model, class_names, transform
 
 class DeploymentDetector:
@@ -47,7 +58,12 @@ class DeploymentDetector:
         self.save_detections = save_detections
         self.detection_count = 0
         self.last_detection_time = 0
+        self.last_detected_cards = []
         self.detection_cooldown = 0.3
+
+        # card tracker variables
+        self.slots = ["Hog Rider", "Musketeer", "Ice Golem", "None"]
+        self.slot_count = [4,2,0,0]
         
         # Auto-detect CUDA
         if device == 'cuda' and not torch.cuda.is_available():
@@ -63,9 +79,6 @@ class DeploymentDetector:
             self.output_dir = f"detections/detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             os.makedirs(self.output_dir, exist_ok=True)
             print(f"Detections will be saved to: {self.output_dir}")
-
-        
-        print("Device is:", device)
         
         if model_path and os.path.exists(model_path):
             self.model, self.class_names, self.transform = load_classifier(model_path, device)
@@ -264,98 +277,102 @@ class DeploymentDetector:
         fps_times = []
 
         while True:
-            if not paused:
-                screenshot = np.array(sct.grab(monitor))
-                frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
+            screenshot = np.array(sct.grab(monitor))
+            frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
 
-                current_time = time.time()
+            current_time = time.time()
 
-                # create overlay with all persistent detections
-                overlay = frame.copy()
+            # create overlay with all persistent detections
+            overlay = frame.copy()
 
-                stored_predictions = []
-                # only classify and add to history at the end. create these bounding boxes first too
-                if self.save_detections and (current_time - self.last_detection_time) > self.detection_cooldown:
-                    detections, white_mask, red_mask = self.detect_opponent_clocks(frame)
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
+            stored_predictions = []
+            # only classify and add to history at the end. create these bounding boxes first too
+            if self.save_detections and (current_time - self.last_detection_time) > self.detection_cooldown:
+                detections, white_mask, red_mask = self.detect_opponent_clocks(frame)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
 
-                    for detection in detections:
-                        self.detection_count += 1
-                        x, y, w, h = detection['bbox']
-                        red_ratio = detection['red_ratio']
-                        frames_remaining = 90
-                        troop_region, (tx, ty, tw, th) = self.extract_troop_region(frame, (x,y,w,h))
-                        if self.classify_enabled:
-                            predicted_card, confidence = self.classify_card(troop_region)
-                        
-                        self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, predicted_card, confidence, red_ratio, frames_remaining)
-                        stored_predictions.append({
-                            'clock_bbox': (x, y, w, h),
-                            'troop_bbox': (tx, ty, tw, th),
-                            'card': predicted_card,
-                            'confidence': confidence,
-                            'red_ratio': red_ratio,
-                            'frames_remaining': frames_remaining - 1
-                        })
-                        # console log
-                        log_msg = f"[{timestamp}] Detection #{self.detection_count}"
-                        if self.classify_enabled:
-                            log_msg += f" | Card: {predicted_card.upper()} ({confidence:.1%})"
-                        log_msg += f" | Red: {red_ratio:.1%}"
-                        print(log_msg)
+                for detection in detections:
+                    self.detection_count += 1
+                    x, y, w, h = detection['bbox']
+                    red_ratio = detection['red_ratio']
+                    frames_remaining = 90
+                    troop_region, (tx, ty, tw, th) = self.extract_troop_region(frame, (x,y,w,h))
+                    if self.classify_enabled:
+                        predicted_card, confidence = self.classify_card(troop_region)
+                    
+                    self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, predicted_card, confidence, red_ratio, frames_remaining)
+                    stored_predictions.append({
+                        'clock_bbox': (x, y, w, h),
+                        'troop_bbox': (tx, ty, tw, th),
+                        'card': predicted_card,
+                        'confidence': confidence,
+                        'red_ratio': red_ratio,
+                        'frames_remaining': frames_remaining - 1
+                    })
+                    # console log
+                    log_msg = f"[{timestamp}] Detection #{self.detection_count}"
+                    if self.classify_enabled:
+                        log_msg += f" | Card: {predicted_card.upper()} ({confidence:.1%})"
+                    log_msg += f" | Red: {red_ratio:.1%}"
+                    print(log_msg)
 
-                        self.last_detection_time = current_time
+                    self.last_detection_time = current_time
 
-                        full_path = os.path.join(self.output_dir, f"full_{self.detection_count:03d}_{timestamp}.png")
-                        cv2.imwrite(full_path, overlay)
-                        troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_{timestamp}.png")
-                        cv2.imwrite(troop_path, troop_region)      
-                        self.last_detection_time = current_time  
+                    full_path = os.path.join(self.output_dir, f"full_{self.detection_count:03d}_{timestamp}.png")
+                    cv2.imwrite(full_path, overlay)
+                    troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_{timestamp}.png")
+                    cv2.imwrite(troop_path, troop_region)      
+                    self.last_detection_time = current_time  
 
-                for det in self.detection_history:
-                    x, y, w, h = det['clock_bbox']
-                    tx, ty, tw, th = det['troop_bbox']
+            for det in self.detection_history:
+                x, y, w, h = det['clock_bbox']
+                tx, ty, tw, th = det['troop_bbox']
 
-                    self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, det['card'], det['confidence'], det['red_ratio'], det['frames_remaining'])
+                self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, det['card'], det['confidence'], det['red_ratio'], det['frames_remaining'])
 
-                    # decrement frame counter
-                    det['frames_remaining'] -= 1
-                      
-                # remove expired detections
-                self.detection_history = [d for d in self.detection_history if d['frames_remaining'] > 0]
+                # decrement frame counter
+                det['frames_remaining'] -= 1
+                    
+            # remove expired detections
+            self.detection_history = [d for d in self.detection_history if d['frames_remaining'] > 0]
 
-                self.detection_history.extend(stored_predictions)
-                # info overlay
-                info_y = 30
-                cv2.putText(overlay, f"Active: {len(self.detection_history)}", (10, info_y),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                cv2.putText(overlay, f"Saved: {self.detection_count}", (10, info_y + 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
-                # calculate FPS
-                fps_times.append(current_time)
-                fps_times = [t for t in fps_times if current_time - t < 1.0]
-                fps = len(fps_times)
+            self.detection_history.extend(stored_predictions)
+            # info overlay
+            info_y = 30
+            cv2.putText(overlay, f"Active: {len(self.detection_history)}", (10, info_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(overlay, f"Saved: {self.detection_count}", (10, info_y + 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # calculate FPS
+            fps_times.append(current_time)
+            fps_times = [t for t in fps_times if current_time - t < 1.0]
+            fps = len(fps_times)
 
-                cv2.putText(overlay, f"FPS: {fps}", (10, info_y + 60),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
-                # status
-                status_color = (0, 255, 0) if len(self.detection_history) > 0 else (255, 255, 255)
-                status_text = f"Tracking {len(self.detection_history)}" if len(self.detection_history) > 0 else "Waiting..."
-                cv2.putText(overlay, status_text,
-                            (10, info_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-                
-                cv2.imshow("Deployment Detection", overlay)
+            cv2.putText(overlay, f"FPS: {fps}", (10, info_y + 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # status
+            status_color = (0, 255, 0) if len(self.detection_history) > 0 else (255, 255, 255)
+            status_text = f"Tracking {len(self.detection_history)}" if len(self.detection_history) > 0 else "Waiting..."
+            cv2.putText(overlay, status_text,
+                        (10, info_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+            
 
-                if show_debug:
-                    cv2.imshow("Debug - White Mask", white_mask)
-                    cv2.imshow("Debug - Red Mask", red_mask)
-            else:
-                paused_frame = overlay.copy()
-                cv2.putText(paused_frame, "PAUSED (SPACE to resume)", (10, 120),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
-                cv2.imshow("Deployment Detection", paused_frame)
+            # card tracker
+            predicted_cards = [p['card'] for p in stored_predictions]
+            for card in predicted_cards:
+                print("\n\n\nPredicted Card:", card, "\n\n\n")
+            
+            self.last_detected_cards = predicted_cards
+
+            self._draw_card_tracker(overlay)
+            
+            cv2.imshow("Deployment Detection", overlay)
+
+            if show_debug:
+                cv2.imshow("Debug - White Mask", white_mask)
+                cv2.imshow("Debug - Red Mask", red_mask)
             
             # keyboard input handling
             key = cv2.waitKey(1) & 0xFF
@@ -363,16 +380,6 @@ class DeploymentDetector:
             if key == ord('q'):
                 print("\nQuitting...")
                 break
-            elif key == ord(' '):
-                paused = not paused
-                print("PAUSED" if paused else "RESUMED")
-            elif key == ord('s') and not paused:
-                # manual save
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
-                manual_path = os.path.join(self.output_dir, f"manual_{timestamp}.png")
-                cv2.imwrite(manual_path, frame)
-                print(f"Manual save: {manual_path}")
-
             elif key == ord('d'):
                 show_debug = not show_debug
                 if not show_debug:
@@ -381,11 +388,70 @@ class DeploymentDetector:
                     cv2.destroyWindow("3. ALL White Contours (blue)")
                     cv2.destroyWindow("4. Result (filtered)")
                 print(f"Debug windows: {'ON' if show_debug else 'OFF'}")
+            elif key == ord('1'):
+                print("1 pressed")
+                self._track_card(0)
+            elif key == ord('2'):
+                print("2 pressed")
+                self._track_card(1)
+            elif key == ord('3'):
+                print("3 pressed")
+                self._track_card(2)
+            elif key == ord('4'):
+                self._track_card(3)
         
         cv2.destroyAllWindows()
         print(f"\nTotal detections saved: {self.detection_count}")
         if self.save_detections:
             print(f"Detections are saved in folder: {self.output_dir}")
+    
+    def _track_card(self, key):
+        if len(self.last_detected_cards) == 0:
+            return
+        
+        self.slots[key] = self.last_detected_cards[0]
+        self.slot_count[key] = 4
+        if len(self.last_detected_cards) > 1:
+            for i in range(key + 1, key + 1 + len(self.last_detected_cards)):
+                self.slots[i] = self.last_detected_cards[i]
+                self.slot_count[i] = 4
+
+    
+    def _draw_card_tracker(self, overlay):
+            bw = 150
+            by = MONITOR_HEIGHT - 400
+            bh = 150
+            gap = 32
+
+            b1x = gap
+            b2x = gap*2 + bw
+            b3x = gap*3 + bw*2
+            b4x = gap*4 + bw*3
+
+            if self.slots[0] != "None":
+                cv2.rectangle(overlay, (b1x, by), (b1x + bw, by + bh), self._determine_color(self.slot_count[0]), -1)
+                cv2.putText(overlay, f"{self.slots[0]}:", (int(b1x + gap/2), int(by + bh/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHITE_COLOR, 2)
+                cv2.putText(overlay, f"{self.slot_count[0]}", (int(b1x + bw/2 - gap), int(by + bh*0.8)), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.5, WHITE_COLOR, 2)
+            if self.slots[1] != "None":
+                cv2.rectangle(overlay, (b2x, by), (b2x + bw, by + bh), self._determine_color(self.slot_count[1]), -1)
+                cv2.putText(overlay, f"{self.slots[1]}:", (int(b2x + gap/2), int(by + bh/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHITE_COLOR, 2)
+                cv2.putText(overlay, f"{self.slot_count[1]}", (int(b2x + bw/2 - gap), int(by + bh*0.8)), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.5, WHITE_COLOR, 2)
+            if self.slots[2] != "None":
+                cv2.rectangle(overlay, (b3x, by), (b3x + bw, by + bh), self._determine_color(self.slot_count[2]), -1)
+                cv2.putText(overlay, f"{self.slots[2]}:", (int(b3x + gap/2), int(by + bh/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHITE_COLOR, 2)
+                cv2.putText(overlay, f"{self.slot_count[2]}", (int(b3x + bw/2 - gap), int(by + bh*0.8)), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.5, WHITE_COLOR, 2)
+            if self.slots[3] != "None":
+                cv2.rectangle(overlay, (b4x, by), (b4x + bw, by + bh), self._determine_color(self.slot_count[3]), -1)
+                cv2.putText(overlay, f"{self.slots[3]}:", (int(b3x + gap/2), int(by + bh/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHITE_COLOR, 2)
+                cv2.putText(overlay, f"{self.slot_count[3]}", (int(b3x + bw/2 - gap), int(by + bh*0.8)), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.5, WHITE_COLOR, 2)
+            
+    
+    def _determine_color(self, count):
+        if count > 2:
+            return OK_COLOR
+        if count > 0:
+            return CLOSE_COLOR
+        return IN_CYCLE_COLOR
     
     def _draw_bounding_box(self, overlay, x, y, w, h, tx, ty, tw, th, predicted_card, confidence, red_ratio, frames_remaining):
         # fade effect
@@ -448,8 +514,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    monitor_region = {'left': 1043, 'top': 32, 'width': 760, 'height': 1360} # empirical full screen region for 1920x1080
-
+    monitor_region = {'left': MONITOR_LEFT, 'top': MONITOR_TOP, 'width': MONITOR_WIDTH, 'height': MONITOR_HEIGHT}
     if args.select_region:
         monitor_region = select_region()
     elif args.region:
