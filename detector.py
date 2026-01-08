@@ -24,6 +24,10 @@ IN_CYCLE_COLOR = (59, 59, 179)
 # text color
 WHITE_COLOR = (255,255,255)
 
+# cooldowns
+TROOP_DETECTION_COOLDOWN = 0.3
+LOG_DETECTION_COOLDOWN = 3
+
 def load_classifier(model_path, device='cuda'):
     print(torch.cuda.is_available())
     if device == 'cuda' and not torch.cuda.is_available():
@@ -62,8 +66,8 @@ class DeploymentDetector:
         self.detection_cooldown = 0.3
 
         # card tracker variables
-        self.slots = ["Hog Rider", "Musketeer", "Ice Golem", "None"]
-        self.slot_count = [4,2,0,0]
+        self.slots = ["None", "None", "None", "None"]
+        self.slot_count = [0,0,0,0]
         
         # Auto-detect CUDA
         if device == 'cuda' and not torch.cuda.is_available():
@@ -192,6 +196,55 @@ class DeploymentDetector:
             cv2.waitKey(1)
         
         return detections, white_mask, red_mask
+
+    def detect_log_spell(self, frame):
+        frame = frame.copy() # explicit copy
+        log_detected = False
+        fh = frame.shape[0]
+        frame = frame[:fh//2, :] # only observe to the end of top half
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        debug_contours = hsv.copy()
+        kernel = np.ones((3,3), np.uint8)
+
+        lower_brown = np.array([10, 110, 70])
+        upper_brown = np.array([14, 155, 210])
+
+        brown_mask = cv2.inRange(hsv, lower_brown, upper_brown)
+        brown_mask = cv2.morphologyEx(brown_mask, cv2.MORPH_OPEN, kernel)
+        brown_mask = cv2.morphologyEx(brown_mask, cv2.MORPH_CLOSE, kernel)
+
+        lower_silver = np.array([106, 36, 90])
+        upper_silver = np.array([120, 88, 240])
+
+        silver_mask = cv2.inRange(hsv, lower_silver, upper_silver)
+        silver_mask = cv2.morphologyEx(silver_mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(brown_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        min_area = 2000
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < min_area:
+                continue
+            contour_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
+            cv2.drawContours(contour_mask, [contour], -1, 255, -1) # fill contour with white, bitwise AND with silver
+            metal_in_contour = cv2.bitwise_and(silver_mask, contour_mask)
+            metal_count = cv2.countNonZero(metal_in_contour)
+
+            metal_ratio = metal_count / area
+            
+            if 0.10 < metal_ratio < 0.15:
+                log_detected = True
+                cv2.drawContours(hsv, [log_detected], -1, (0, 255, 0), 2)
+
+                # bounding box for label
+                x, y, w, h = cv2.boundingRect(contour)
+                cv2.putText(debug_contours, f"Log w/ metal: {metal_ratio: .1%}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+                cv2.imwrite("last_detected_log.png", debug_contours)
+
+        return log_detected
+        
     
     def extract_troop_region(self, frame, clock_bbox):
         """
@@ -364,7 +417,15 @@ class DeploymentDetector:
             for card in predicted_cards:
                 print("\n\n\nPredicted Card:", card, "\n\n\n")
             
-            self.last_detected_cards = predicted_cards
+            if len(predicted_cards) > 0:
+                self.last_detected_cards = predicted_cards
+
+            for i in range(len(self.slots)):
+                for card in predicted_cards:
+                    if self.slot_count[i] == 0:
+                        self.slot_count[i] = 4
+                    else:
+                        self.slot_count[i] -= 1
 
             self._draw_card_tracker(overlay)
             
@@ -389,15 +450,16 @@ class DeploymentDetector:
                     cv2.destroyWindow("4. Result (filtered)")
                 print(f"Debug windows: {'ON' if show_debug else 'OFF'}")
             elif key == ord('1'):
-                print("1 pressed")
+                print(f"Slot 1 assigned to {predicted_cards}")
                 self._track_card(0)
             elif key == ord('2'):
-                print("2 pressed")
+                print(f"Slot 2 assigned to {predicted_cards}")
                 self._track_card(1)
             elif key == ord('3'):
-                print("3 pressed")
+                print(f"Slot 3 assigned to {predicted_cards}")
                 self._track_card(2)
             elif key == ord('4'):
+                print(f"Slot 4 assigned to {predicted_cards}")
                 self._track_card(3)
         
         cv2.destroyAllWindows()

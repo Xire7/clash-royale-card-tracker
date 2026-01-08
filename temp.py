@@ -4,30 +4,63 @@ import numpy as np
 import torch
 import sys
 
-print("Python version:", sys.version)
-print("PyTorch version:", torch.__version__)
-print("CUDA available:", torch.cuda.is_available())
-
-if torch.cuda.is_available():
-    print("CUDA version:", torch.version.cuda)
-    print("Device count:", torch.cuda.device_count())
-    print("Current device:", torch.cuda.current_device())
-    print("Device name:", torch.cuda.get_device_name(0))
-else:
-    print("\nCUDA is NOT available. Possible reasons:")
-    print("1. PyTorch was installed without CUDA support (CPU-only version)")
-    print("2. NVIDIA drivers are not properly installed")
-    print("3. CUDA toolkit version mismatch")
-    print("\nTo fix, reinstall PyTorch with CUDA support:")
-    print("pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
-    print("(Use cu118, cu121, or cu124 depending on your CUDA version)")
-
-def sample_clock_colors(image_path):
+def sample_hsv_colors(image_path):
     """
-    Click on the clock to see its HSV values
+    Click on the image to see its HSV values
     """
+    detected_log = None
     img = cv2.imread(image_path)
+    height = img.shape[0]
+
+    img = img[:height//2, :]
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    debug_contours = hsv.copy()
+    kernel = np.ones((3,3), np.uint8)
+
+    lower_brown = np.array([10, 110, 70])
+    upper_brown = np.array([14, 155, 210])
+
+    brown_mask = cv2.inRange(hsv, lower_brown, upper_brown)
+    brown_mask = cv2.morphologyEx(brown_mask, cv2.MORPH_OPEN, kernel)
+    brown_mask = cv2.morphologyEx(brown_mask, cv2.MORPH_CLOSE, kernel)
+
+    lower_silver = np.array([106, 36, 90])
+    upper_silver = np.array([120, 88, 240])
+
+    silver_mask = cv2.inRange(hsv, lower_silver, upper_silver)
+    silver_mask = cv2.morphologyEx(silver_mask, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(brown_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    min_area = 2000
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < min_area:
+            continue
+        contour_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
+        cv2.drawContours(contour_mask, [contour], -1, 255, -1) # fill contour with white, bitwise AND with silver
+        metal_in_contour = cv2.bitwise_and(silver_mask, contour_mask)
+        metal_count = cv2.countNonZero(metal_in_contour)
+
+        metal_ratio = metal_count / area
+        
+        if 0.10 < metal_ratio < 0.15:
+            detected_log = contour
+            cv2.drawContours(img, [detected_log], -1, (0, 255, 0), 2)
+
+            # bounding box for label
+            x, y, w, h = cv2.boundingRect(contour)
+            cv2.putText(debug_contours, f"Log w/ metal: {metal_ratio: .1%}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+
+
+    cv2.drawContours(debug_contours, contours, -1, (255, 0, 0), 2)
+
+    cv2.imshow("Brown Mask", brown_mask)
+
+    cv2.imshow("Silver Mask", silver_mask)
+
+    cv2.imshow("Contours Debugged", debug_contours)
     
     def mouse_callback(event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -47,9 +80,6 @@ def sample_clock_colors(image_path):
     cv2.namedWindow('Image')
     cv2.setMouseCallback('Image', mouse_callback)
     
-    print("Click on different parts of the gold ring to see HSV values")
-    print("Press ESC to exit")
-    
     while True:
         cv2.imshow('Image', img)
         if cv2.waitKey(1) == 27:  # ESC
@@ -57,18 +87,4 @@ def sample_clock_colors(image_path):
     
     cv2.destroyAllWindows()
 
-def clock_detection_test(path):
-    img = cv2.imread(path)
-
-    detect = detector.DeploymentDetector(None, False)
-
-    detections, white_mask, red_mask = detect.detect_opponent_clocks(img, show_debug=True)
-
-    print(f"Found {len(detections)} red clocks")
-
-    print("Detections:", detections)
-
-    cv2.waitKey(0)
-
-# sample_clock_colors('red_clock_006.png')
-# clock_detection_test('red_clock_008.png')
+sample_hsv_colors('log.png')
