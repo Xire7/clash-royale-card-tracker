@@ -1,5 +1,5 @@
 # clash-royale-card-tracker
-CNN-based opponent card tracker for clash royale
+CNN (MobileNet) & OpenCV based opponent card tracker for clash royale
 
 ## Overview
 
@@ -113,7 +113,7 @@ data/train/cannon/
    **Expected gain:** +5-10% accuracy
 
 2. **Collect More Data**
-   - Target: 150-200 images per class
+   - Target: 200 images per class
    - Focus on gold cosmetics (more common in practice)
    - **Expected gain:** +10-15% accuracy
 
@@ -132,13 +132,11 @@ data/train/cannon/
 
 - **Fireball/Log Detection** - Separate CV pipeline (orange/brown detection)
 - **Card Cycle Counter** - Track when specific card returns to hand (4 placements)
-- **Multi-model Ensemble** - Combine MobileNet + ResNet predictions
 - **Evolution/Hero Variants** - Expand to handle special card variants
 
 ### Known Limitations
 
 - **Not viable for elixir tracking** (requires 100% accuracy, CNN can't guarantee this)
-- **Gold cosmetics** can confuse clock detection (addressed with white-center detection)
 - **Fast troops** (skeletons, ice spirit) may move out of detection region quickly
 - **Overlapping deployments** can cause missed classifications
 
@@ -160,8 +158,3 @@ data/train/cannon/
 4. Find contours with area/aspect/circularity filters
 5. Check for small red presence (5-20% of region)
 6. Extract troop region (170×170 centered on clock, extends upward)
-
-### Inference Speed
-- **Clock detection:** ~2ms per frame (OpenCV)
-- **CNN classification:** ~10-30ms (CPU), ~2-5ms (GPU)
-- **Total pipeline:** ~15-35ms per frame (30-60 FPS capable)
