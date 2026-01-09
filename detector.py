@@ -62,12 +62,13 @@ class DeploymentDetector:
         self.save_detections = save_detections
         self.detection_count = 0
         self.last_detection_time = 0
+        self.last_log_detection_time = 0
         self.last_detected_cards = []
         self.detection_cooldown = 0.3
 
         # card tracker variables
         self.slots = ["None", "None", "None", "None"]
-        self.slot_count = [0,0,0,0]
+        self.slot_count = [-1,-1,-1,-1]
         
         # Auto-detect CUDA
         if device == 'cuda' and not torch.cuda.is_available():
@@ -197,7 +198,8 @@ class DeploymentDetector:
         
         return detections, white_mask, red_mask
 
-    def detect_log_spell(self, frame):
+    # TODO: edge cases - misses middle logs from the enemy when one tower down, mirrored log is beyond cooldown constant
+    def detect_log_spell(self, frame, time):
         frame = frame.copy() # explicit copy
         log_detected = False
         fh = frame.shape[0]
@@ -223,25 +225,34 @@ class DeploymentDetector:
         contours, _ = cv2.findContours(brown_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         min_area = 2000
+        margin = 10
         for contour in contours:
             area = cv2.contourArea(contour)
             if area < min_area:
                 continue
-            contour_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
-            cv2.drawContours(contour_mask, [contour], -1, 255, -1) # fill contour with white, bitwise AND with silver
-            metal_in_contour = cv2.bitwise_and(silver_mask, contour_mask)
-            metal_count = cv2.countNonZero(metal_in_contour)
 
-            metal_ratio = metal_count / area
-            
-            if 0.10 < metal_ratio < 0.15:
+            x, y, w, h = cv2.boundingRect(contour)
+
+            bx = x - margin
+            by = y - margin
+            bw = w + 2*margin
+            bh = h + 2*margin
+
+            silver_roi = silver_mask[by:by+bh, bx:bx+bw]
+            silver_count = np.sum(silver_roi > 0)
+
+            metal_ratio = silver_count / area
+
+            if 0.15 < metal_ratio < 0.20:
                 log_detected = True
-                cv2.drawContours(hsv, [log_detected], -1, (0, 255, 0), 2)
-
+                cv2.drawContours(debug_contours, [contour], -1, (0, 255, 0), 2)
+                self.last_log_detection_time = time
                 # bounding box for label
-                x, y, w, h = cv2.boundingRect(contour)
+                cv2.rectangle(debug_contours, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
                 cv2.putText(debug_contours, f"Log w/ metal: {metal_ratio: .1%}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
-                cv2.imwrite("last_detected_log.png", debug_contours)
+                os.makedirs("log_detections", exist_ok=True)
+                cv2.imwrite(f"log_detections/last_detected_log_{time}.png", debug_contours)
+                break
 
         return log_detected
         
@@ -338,6 +349,17 @@ class DeploymentDetector:
             # create overlay with all persistent detections
             overlay = frame.copy()
 
+
+            # log CV-heuristic detection
+
+            if (current_time - self.last_log_detection_time > LOG_DETECTION_COOLDOWN):
+                log_detected = self.detect_log_spell(frame, current_time)
+                if log_detected:
+                    for i in range(len(self.slot_count)):
+                        if self.slot_count[i] != -1 and self.slot_count[i] > 0:
+                            self.slot_count[i] -= 1
+                    log_detected = False
+
             stored_predictions = []
             # only classify and add to history at the end. create these bounding boxes first too
             if self.save_detections and (current_time - self.last_detection_time) > self.detection_cooldown:
@@ -423,7 +445,10 @@ class DeploymentDetector:
             for i in range(len(self.slots)):
                 for card in predicted_cards:
                     if self.slot_count[i] == 0:
-                        self.slot_count[i] = 4
+                        if self.slots[i] == card:
+                            self.slot_count[i] = 4
+                        else:
+                            continue
                     else:
                         self.slot_count[i] -= 1
 

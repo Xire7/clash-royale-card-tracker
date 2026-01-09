@@ -12,7 +12,7 @@ def sample_hsv_colors(image_path):
     img = cv2.imread(image_path)
     height = img.shape[0]
 
-    img = img[:height//2, :]
+    # img = img[:height//2, :]
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
     debug_contours = hsv.copy()
@@ -34,24 +34,36 @@ def sample_hsv_colors(image_path):
     contours, _ = cv2.findContours(brown_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     min_area = 2000
+    margin = 10
     for contour in contours:
         area = cv2.contourArea(contour)
+        x, y, w, h = cv2.boundingRect(contour)
+
+        bx = x - margin
+        by = y - margin
+        bw = w + 2*margin
+        bh = h + 2*margin
+
         if area < min_area:
             continue
-        contour_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
-        cv2.drawContours(contour_mask, [contour], -1, 255, -1) # fill contour with white, bitwise AND with silver
-        metal_in_contour = cv2.bitwise_and(silver_mask, contour_mask)
-        metal_count = cv2.countNonZero(metal_in_contour)
 
-        metal_ratio = metal_count / area
-        
-        if 0.10 < metal_ratio < 0.15:
+        silver_roi = silver_mask[by:by+bh, bx:bx+bw]
+        silver_count = np.sum(silver_roi > 0)
+
+        metal_ratio = silver_count / area
+
+        cv2.putText(debug_contours, f"Metal: {metal_ratio: .1%}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+        cv2.rectangle(debug_contours, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
+
+        print("Area reqs met")
+        if 0.15 < metal_ratio < 0.20:
+            print("Metal ratio:", metal_ratio)
             detected_log = contour
             cv2.drawContours(img, [detected_log], -1, (0, 255, 0), 2)
+            cv2.rectangle(img, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
 
             # bounding box for label
-            x, y, w, h = cv2.boundingRect(contour)
-            cv2.putText(debug_contours, f"Log w/ metal: {metal_ratio: .1%}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+            cv2.putText(img, f"Log w/ metal: {metal_ratio: .1%}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
 
 
     cv2.drawContours(debug_contours, contours, -1, (255, 0, 0), 2)
@@ -87,4 +99,6 @@ def sample_hsv_colors(image_path):
     
     cv2.destroyAllWindows()
 
-sample_hsv_colors('log.png')
+    return
+
+sample_hsv_colors('log3.png')
