@@ -2,6 +2,7 @@
 CNN (MobileNet) & OpenCV based opponent card tracker for clash royale
 
 ![Clash Royale Card Tracker Thumbnail](images/cycle_thumbnail.png)
+hard thumbnail by @teka._.ten instagram
 
 ## Why does this exist?
 

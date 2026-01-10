@@ -209,6 +209,7 @@ __marimo__/
 # any images
 
 *.png
+!cycle_thumbnail.png
 *.pth
 
 crop_to_square.py
