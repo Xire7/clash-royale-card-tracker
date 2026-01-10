@@ -27,6 +27,21 @@ WHITE_COLOR = (255,255,255)
 # cooldowns
 TROOP_DETECTION_COOLDOWN = 0.3
 LOG_DETECTION_COOLDOWN = 3
+FIREBALL_DETECTION_COOLDOWN = 3
+
+# KING TOWER: REPLAY CONSTANTS
+KY1_FACTOR_REPLAY = 2/10
+KY2_FACTOR_REPLAY = 4/15
+
+KX1_FACTOR_REPLAY = 5/12
+KX2_FACTOR_REPLAY = 7/12
+
+# KING TOWER: REAL GAME CONSTANTS
+KY1_FACTOR_GAME = 1/14
+KY2_FACTOR_GAME = 2/14
+
+KX1_FACTOR_GAME = 4/10
+KX2_FACTOR_GAME = 6/10
 
 def load_classifier(model_path, device='cuda'):
     print(torch.cuda.is_available())
@@ -63,6 +78,7 @@ class DeploymentDetector:
         self.detection_count = 0
         self.last_detection_time = 0
         self.last_log_detection_time = 0
+        self.last_fireball_detection_time = 0
         self.last_detected_cards = []
         self.detection_cooldown = 0.3
 
@@ -246,21 +262,78 @@ class DeploymentDetector:
             if 0.15 < metal_ratio < 0.20:
                 log_detected = True
                 cv2.drawContours(debug_contours, [contour], -1, (0, 255, 0), 2)
-                self.last_log_detection_time = time
                 # bounding box for label
                 cv2.rectangle(debug_contours, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
                 cv2.putText(debug_contours, f"Log w/ metal: {metal_ratio: .1%}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
                 os.makedirs("log_detections", exist_ok=True)
-                cv2.imwrite(f"log_detections/last_detected_log_{time}.png", debug_contours)
+                cv2.imwrite(f"log_detections/detected_log_{time}.png", debug_contours)
                 break
 
         return log_detected
-        
     
+    def detect_fireball_spell(self, frame, time):
+        frame = frame.copy()
+        fireball_detected = False
+
+        height = frame.shape[0]
+        width = frame.shape[1]
+
+        frame = frame[int(height*KY1_FACTOR_REPLAY):int(height*KY2_FACTOR_REPLAY), int(width*KX1_FACTOR_REPLAY):int(width*KX2_FACTOR_REPLAY)] # replay king tower coordinates
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        kernel = np.ones((3,3), np.uint8)
+
+        lower_orange = np.array([16, 100, 250])
+        upper_orange = np.array([30, 255, 255])
+
+        orange_mask = cv2.inRange(hsv, lower_orange, upper_orange)
+        orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_OPEN, kernel)
+        orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(orange_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        min_area = 1200
+        max_area = 1600
+        margin = 0
+        min_circularity = 0.23 # fireball should be somewhat circular when first thrown
+        max_circularity = 0.60 # fireball isnt super round
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            x, y, w, h = cv2.boundingRect(contour)
+
+            bx = x - margin
+            by = y - margin
+            bw = w + 2*margin
+            bh = h + 2*margin
+
+            if area < min_area or area > max_area:
+                continue
+
+            # calculate circularity
+
+            perimeter = cv2.arcLength(contour, True)
+            if perimeter == 0:
+                continue
+
+            circularity = 4 * np.pi * area / (perimeter**2)
+
+            if circularity < min_circularity or circularity > max_circularity:
+                continue
+
+            cv2.drawContours(frame, [contour], -1, (0,255,0), 2)
+            cv2.rectangle(frame, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
+            cv2.putText(frame, f"A: {area} C:{circularity}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+            os.makedirs("fireball_detections", exist_ok=True)
+            cv2.imwrite(f"fireball_detections/detected_fireball_{time}.png", frame)
+            print(f"Fireball detected. Area: {area}, Circularity: {circularity}")
+            fireball_detected = True
+            break
+
+        return fireball_detected
+
     def extract_troop_region(self, frame, clock_bbox):
-        """
-        Given clock bounding box, extract the troop deploy region
-        """
         OFFSET_Y = 10 # adjusting region upward to frame below/at half of the clock
 
         x, y, w, h = clock_bbox
@@ -279,9 +352,6 @@ class DeploymentDetector:
 
     
     def classify_card(self, troop_region):
-        """
-        Use CNN model to classify placed troop in region
-        """
         if not self.classify_enabled or troop_region.size == 0:
             return "Unknown", 0.0
         
@@ -309,14 +379,6 @@ class DeploymentDetector:
 
 
     def run(self, monitor_region=None, show_debug=False):
-        """
-        Real-time detection with overlay
-
-        monitor_region: dict with keys 'top', 'left', 'width', 'height' for mss
-
-        if none, captures entire screen
-        """
-
         sct = mss.mss()
 
         if monitor_region is None:
@@ -329,9 +391,6 @@ class DeploymentDetector:
         print(f"Monitoring region: {monitor}")
         print(f"Device: {self.device.upper()}")
         print("\nControls:")
-        print("  SPACE - Pause/Resume")
-        print("  S - Save current detections manually")
-        print("  D - Toggle debug windows")
         print("  Q - Quit")
         print("\nDetections will be saved automatically when triggered.")
         print("=" * 50)
@@ -349,16 +408,20 @@ class DeploymentDetector:
             # create overlay with all persistent detections
             overlay = frame.copy()
 
+            log_detected = False
+            fireball_detected = False
 
             # log CV-heuristic detection
-
             if (current_time - self.last_log_detection_time > LOG_DETECTION_COOLDOWN):
                 log_detected = self.detect_log_spell(frame, current_time)
                 if log_detected:
-                    for i in range(len(self.slot_count)):
-                        if self.slot_count[i] != -1 and self.slot_count[i] > 0:
-                            self.slot_count[i] -= 1
-                    log_detected = False
+                    self.last_log_detection_time = current_time
+
+            # fireball CV-heuristic detection
+            if (current_time - self.last_fireball_detection_time > FIREBALL_DETECTION_COOLDOWN):
+                fireball_detected = self.detect_fireball_spell(frame, current_time)
+                if fireball_detected:
+                    self.last_fireball_detection_time = current_time
 
             stored_predictions = []
             # only classify and add to history at the end. create these bounding boxes first too
@@ -436,9 +499,17 @@ class DeploymentDetector:
 
             # card tracker
             predicted_cards = [p['card'] for p in stored_predictions]
-            for card in predicted_cards:
-                print("\n\n\nPredicted Card:", card, "\n\n\n")
+
+            if log_detected:
+                predicted_cards.append("Log")
+                log_detected = False
+            if fireball_detected:
+                predicted_cards.append("Fireball")
+                fireball_detected = False
             
+            for card in predicted_cards:
+                print(f"Predicted Card: {card}")
+
             if len(predicted_cards) > 0:
                 self.last_detected_cards = predicted_cards
 
@@ -529,8 +600,8 @@ class DeploymentDetector:
                 cv2.putText(overlay, f"{self.slot_count[2]}", (int(b3x + bw/2 - gap), int(by + bh*0.8)), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.5, WHITE_COLOR, 2)
             if self.slots[3] != "None":
                 cv2.rectangle(overlay, (b4x, by), (b4x + bw, by + bh), self._determine_color(self.slot_count[3]), -1)
-                cv2.putText(overlay, f"{self.slots[3]}:", (int(b3x + gap/2), int(by + bh/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHITE_COLOR, 2)
-                cv2.putText(overlay, f"{self.slot_count[3]}", (int(b3x + bw/2 - gap), int(by + bh*0.8)), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.5, WHITE_COLOR, 2)
+                cv2.putText(overlay, f"{self.slots[3]}:", (int(b4x + gap/2), int(by + bh/4)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHITE_COLOR, 2)
+                cv2.putText(overlay, f"{self.slot_count[3]}", (int(b4x + bw/2 - gap), int(by + bh*0.8)), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.5, WHITE_COLOR, 2)
             
     
     def _determine_color(self, count):
