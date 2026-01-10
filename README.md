@@ -8,6 +8,8 @@ hard thumbnail by @teka._.ten instagram
 
 If you've ever lost a game of Clash Royale because you got outcycled by an opponent, or at a critical moment you placed your win condition and they had the perfect card to counter it on the right time, this cycle tracker is for you!
 
+This will track where the opponent's cards are in their deck so you know when they'll have it up or not. 
+
 Instead of getting gud, just plug and play this application to a BlueStacks Clash Royale emulator and get infinite LP lol
 
 ## Important Disclaimer
