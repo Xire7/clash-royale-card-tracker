@@ -1,14 +1,19 @@
 # clash-royale-card-tracker
 CNN (MobileNet) & OpenCV based opponent card tracker for clash royale
 
-## Overview
+![Clash Royale Card Tracker Thumbnail](images/cycle_thumbnail.png)
 
-This project detects when opponents deploy troops in Clash Royale by:
-1. **OpenCV Clock Detection** - Identifies deployment clocks (white center + small red fill)
-2. **CNN Classification** - Classifies the deployed troop using a trained MobileNetV2 model
-3. **Real-time Overlay** - Displays detections with persistent bounding boxes
+## Why does this exist?
 
-**Current Accuracy:** ~85-90% (6 card classes)
+If you've ever lost a game of Clash Royale because you got outcycled by an opponent, or at a critical moment you placed your win condition and they had the perfect card to counter it on the right time, this cycle tracker is for you!
+
+Instead of getting gud, just plug and play this application to a BlueStacks Clash Royale emulator and get infinite LP lol
+
+## Important Disclaimer
+
+This card tracker only detects Hog 2.6 at the moment ! Clash Royale has 100 deployable troop cards, assuming 200 images per troop class to allow the CNN to learn how the card looks when placed, this would mean I would have to collect 20,000 images by hand. I am not doing allat rn
+
+**Current Accuracy:** ~60-70% (6 card classes)
 
 ## Installation
 
@@ -17,25 +22,12 @@ This project detects when opponents deploy troops in Clash Royale by:
 - NVIDIA GPU (optional but recommended for training)
 - CUDA 12.8+ (if using GPU)
 
-### Setup
-```bash
-# Clone repository
-git clone https://github.com/yourusername/clash-royale-card-tracker
-cd clash-royale-card-tracker
-
-# Install dependencies
-pip install -r requirements.txt
-
-# For GPU support (recommended)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-```
-
 
 ## Usage
 
 ### 1. Train the Model
 
-Trains a MobileNetV2 classifier on your collected troop images.
+Trains a MobileNetV2 classifier on collected troop images.
 ```bash
 python train.py
 ```
@@ -64,16 +56,10 @@ python detector.py --model models/best_model_*.pth --select-region
 python detector.py --model models/best_model_*.pth --no-save
 ```
 
-**Controls:**
-- `SPACE` - Pause/Resume
-- `S` - Manual screenshot save
-- `D` - Toggle debug windows
-- `Q` - Quit
 
+## Dataset Collection Notes
 
-## Dataset Collection Guide
-
-### Image Requirements
+### Current Image Requirements
 
 **Per card class:** 100 images total
 - **Training:** 56 gold + 24 normal (80 total)
@@ -90,15 +76,6 @@ data/train/cannon/
   ├── gold/      # Gold cosmetic troops (56 images)
   └── normal/    # Normal color troops (24 images)
 ```
-
-### Tips for Collection
-
-1. **Use detector.py** to auto-save detections while playing
-2. **Watch replays** for easier data collection
-3. **Variety:** Different arenas, game states, angles
-4. **Consistency:** Same framing (troop centered, clock at bottom)
-5. **70/30 gold/normal split** reflects real player preferences
-
 
 ## Next Steps
 
@@ -150,11 +127,3 @@ data/train/cannon/
 - **Trainable:** Final classification layer (6 classes)
 - **Input:** 224×224 RGB images
 - **Output:** 6-class softmax probabilities
-
-### Clock Detection Pipeline
-1. Convert frame to HSV color space
-2. Threshold for white pixels (clock center)
-3. Morphological operations to clean noise
-4. Find contours with area/aspect/circularity filters
-5. Check for small red presence (5-20% of region)
-6. Extract troop region (170×170 centered on clock, extends upward)
