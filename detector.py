@@ -271,6 +271,7 @@ class DeploymentDetector:
 
         return log_detected
     
+    # TODO: add a CV heuristic game_type_checker, REPLAY or LIVE, so king tower crop is accurate for fireball check
     def detect_fireball_spell(self, frame, time):
         frame = frame.copy()
         fireball_detected = False
