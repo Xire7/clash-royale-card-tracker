@@ -112,7 +112,7 @@ class DeploymentDetector:
             if model_path:
                 print(f"Warning: model path '{model_path}' not found. Classifier disabled")
 
-    def detect_opponent_clocks(self, frame, show_debug=False):
+    def detect_opponent_clocks(self, frame):
         """
         Enemy clock detection with openCV. detect high white concentrations with small red presence
         """
@@ -204,13 +204,6 @@ class DeploymentDetector:
                     cv2.rectangle(debug_result, (x, y), (x+w, y+h), (0, 165, 255), 1)
                     cv2.putText(debug_result, " ".join(reasons), (x, y-5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 165, 255), 1)
-                
-        if show_debug:
-            cv2.imshow("1. White Mask", white_mask)
-            cv2.imshow("2. Red Mask", red_mask)
-            cv2.imshow("3. ALL White Contours (blue)", debug_all_contours)
-            cv2.imshow("4. Result (filtered)", debug_result)
-            cv2.waitKey(1)
         
         return detections, white_mask, red_mask
 
@@ -392,6 +385,7 @@ class DeploymentDetector:
         print(f"Monitoring region: {monitor}")
         print(f"Device: {self.device.upper()}")
         print("\nControls:")
+        print("  D - Debug mode (see bounding boxes)")
         print("  Q - Quit")
         print("\nDetections will be saved automatically when triggered.")
         print("=" * 50)
@@ -526,11 +520,17 @@ class DeploymentDetector:
 
             self._draw_card_tracker(overlay)
             
-            cv2.imshow("Deployment Detection", overlay)
+            cropped_overlay = overlay.copy()
 
+            ch = cropped_overlay.shape[0]
+            cw = cropped_overlay.shape[1]
+
+            cropped_overlay = cropped_overlay[int(ch*13/20):int(ch*17/20), :]
+
+            cv2.imshow("Card Tracker Cropped", cropped_overlay)
+            
             if show_debug:
-                cv2.imshow("Debug - White Mask", white_mask)
-                cv2.imshow("Debug - Red Mask", red_mask)
+                cv2.imshow("Card Tracker Full", overlay)
             
             # keyboard input handling
             key = cv2.waitKey(1) & 0xFF
@@ -541,10 +541,7 @@ class DeploymentDetector:
             elif key == ord('d'):
                 show_debug = not show_debug
                 if not show_debug:
-                    cv2.destroyWindow("1. White Mask")
-                    cv2.destroyWindow("2. Red Mask")
-                    cv2.destroyWindow("3. ALL White Contours (blue)")
-                    cv2.destroyWindow("4. Result (filtered)")
+                    cv2.destroyWindow("Card Tracker Full")
                 print(f"Debug windows: {'ON' if show_debug else 'OFF'}")
             elif key == ord('1'):
                 print(f"Slot 1 assigned to {predicted_cards}")
