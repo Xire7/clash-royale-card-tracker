@@ -11,7 +11,7 @@ from torchvision import models, transforms
 from PIL import Image
 
 # empirical full screen constants
-MONITOR_LEFT = 1043
+MONITOR_LEFT = 940
 MONITOR_TOP = 32
 MONITOR_WIDTH = 760
 MONITOR_HEIGHT = 1360

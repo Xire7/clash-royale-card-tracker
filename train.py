@@ -37,18 +37,14 @@ os.makedirs(CONFIG['model_save_dir'], exist_ok=True)
 ## data loading for training HERE
 
 train_transform = transforms.Compose([
-    transforms.Resize(256),
-    transforms.RandomCrop(CONFIG['image_size']),
-    transforms.RandomHorizontalFlip(p=0.3),
-    transforms.RandomRotation(degrees=10),
-    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+    transforms.Resize((CONFIG['image_size'], CONFIG['image_size'])),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
 val_transform = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(CONFIG['image_size']),
+    transforms.Resize((CONFIG['image_size'], CONFIG['image_size'])),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
@@ -218,6 +214,11 @@ best_val_acc = 0.0
 train_losses, val_losses = [], []
 train_accs, val_accs = [], []
 
+best_model = {}
+
+model_dir = os.path.join(CONFIG['model_save_dir'], datetime.now().strftime("%Y%m%d_%H%M"))
+os.makedirs(model_dir, exist_ok=True)
+
 for epoch in range(CONFIG['num_epochs']):
     print(f"\nEpoch {epoch + 1}/{CONFIG['num_epochs']}")
     print("-" * 60)
@@ -249,24 +250,25 @@ for epoch in range(CONFIG['num_epochs']):
         print(f"    {class_name}: {acc:.2f}%")
     
 
-    # save best model
+    # save current best model
     if val_acc > best_val_acc:
         best_val_acc = val_acc
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_path = os.path.join(CONFIG['model_save_dir'], f'best_model_{timestamp}.pth')
 
-        torch.save({
+        best_model = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'val_acc': val_acc,
             'class_names': CLASSES,
             'config': CONFIG,
-        }, model_path)
+        }
 
-        print(f"\n new best model saved: (VAL ACC: {val_acc:.2f}%)")
-        print(f"saved to: {model_path}")
+        print(f"\n new model saved: (VAL ACC: {val_acc:.2f}%)")
     print("\n" + "=" * 60)
+
+best_model_path = os.path.join(model_dir, "best_model.pth")
+
+torch.save(best_model, best_model_path)
 
 print(f"Training complete!")
 print(f"Best validation accuracy: {best_val_acc:.2f}%")
