@@ -451,8 +451,8 @@ class DeploymentDetector:
 
                     self.last_detection_time = current_time
 
-                    full_path = os.path.join(self.output_dir, f"full_{self.detection_count:03d}_{timestamp}.png")
-                    cv2.imwrite(full_path, overlay)
+                    # full_path = os.path.join(self.output_dir, f"full_{self.detection_count:03d}_{timestamp}.png")
+                    # cv2.imwrite(full_path, overlay)
                     troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_{timestamp}.png")
                     cv2.imwrite(troop_path, troop_region)      
                     self.last_detection_time = current_time  
@@ -687,4 +687,4 @@ if __name__ == "__main__":
             print("Invalid region format. Using default region.")
     
     detector = DeploymentDetector(model_path=args.model, save_detections=not args.no_save, device='cuda') # gigachad GPU user
-    detector.run(monitor_region=monitor_region)
+    detector.run(monitor_region=monitor_region, show_debug=True)

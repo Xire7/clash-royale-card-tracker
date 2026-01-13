@@ -1,49 +1,43 @@
 Image Collection
 
-
-90/10 split on elongated / post-deployment troop sprites
-
-45 regular spawn, 45 gold spawn, 10 normal troop
-
-
 Dataset Counts:
 
-Ideal Train: 56G/24N (80 total)
+Ideal Train: 160G/40N (200 total)
 Ideal Val: 14G/6N (20 total)
 
 Cannon
 ==============
-Normal: 63
-Gold: 72
+Normal: 88 X
+Gold: 105 X 
 Evo: 1
 
 Hog Rider
 ==============
-Normal: 30
-Gold: 179
+Normal: 48 X
+Gold: 262
 
 Ice Golem
 ==============
-Normal: 118
-Gold: 71
+Normal: 160
+Gold: 100 X
 
 Ice Spirit
 ==============
-Normal: 60
-Gold: 124
+Normal: 112
+Gold: 140 X
 
 Musketeer
 ==============
-Normal: 32
-Gold: 86
+Normal: 45 X
+Gold: 89 X
 Evo: 0
-Hero: 22
+Hero: 44
 
 Skeletons
 ==============
-Normal: 78
-Gold: 75
-Evo: 14
+Normal: 109
+Gold: 138
+Evo: 24
 
 
 
