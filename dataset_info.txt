@@ -7,13 +7,13 @@ Ideal Val: 14G/6N (20 total)
 
 Cannon
 ==============
-Normal: 88 X
+Normal: 88 
 Gold: 105 X 
 Evo: 1
 
 Hog Rider
 ==============
-Normal: 48 X
+Normal: 48
 Gold: 262
 
 Ice Golem
@@ -24,11 +24,11 @@ Gold: 100 X
 Ice Spirit
 ==============
 Normal: 112
-Gold: 140 X
+Gold: 140 ?
 
 Musketeer
 ==============
-Normal: 45 X
+Normal: 45
 Gold: 89 X
 Evo: 0
 Hero: 44
@@ -36,7 +36,7 @@ Hero: 44
 Skeletons
 ==============
 Normal: 109
-Gold: 138
+Gold: 138 ?
 Evo: 24
 
 
