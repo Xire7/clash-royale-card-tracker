@@ -21,8 +21,8 @@ CONFIG = {
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
 
     # image limits per subfolder
-    'train_gold_per_class': 56,
-    'train_normal_per_class': 24,
+    'train_gold_per_class': 160,
+    'train_normal_per_class': 40,
     'val_gold_per_class': 14,
     'val_normal_per_class': 6
 }

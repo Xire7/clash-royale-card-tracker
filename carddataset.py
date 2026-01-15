@@ -7,6 +7,9 @@ import glob
 from datetime import datetime
 
 
+# in my dataset, want to include 60 hero musketeers
+HERO_MUSKETEER_LIMIT = 70
+
 class CardDataset(Dataset):
     def __init__(self, root_dir, classes, gold_limit, normal_limit, transform=None):
         self.root_dir = root_dir
@@ -23,10 +26,21 @@ class CardDataset(Dataset):
             normal_dir = os.path.join(class_dir, 'normal')
 
             if os.path.exists(gold_dir):
-                gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:gold_limit] # only gold_limit num of images
-                for img_path in gold_images:
-                    self.samples.append((img_path, class_idx))
-            
+                if class_name == "musketeer":
+                    hero_dir = os.path.join(class_dir, 'hero')
+                    hero_images = glob.glob(os.path.join(hero_dir, '*.png'))[:HERO_MUSKETEER_LIMIT]
+                    for img_path in hero_images:
+                        self.samples.append((img_path, class_idx))
+                    
+                    modified_gold_limit = gold_limit - HERO_MUSKETEER_LIMIT
+                    gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:modified_gold_limit] # subtract hero number
+                    for img_path in gold_images:
+                        self.samples.append((img_path, class_idx))
+                else:
+                    gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:gold_limit] # only gold_limit num of images
+                    for img_path in gold_images:
+                        self.samples.append((img_path, class_idx))
+                
             if os.path.exists(normal_dir):
                 normal_images = glob.glob(os.path.join(normal_dir, '*.png'))[:normal_limit] # only normal_limit num of images
                 for img_path in normal_images:
