@@ -17,7 +17,7 @@ Instead of getting gud, just plug and play this application to a BlueStacks Clas
 
 This card tracker only detects Hog 2.6 at the moment ! Clash Royale has 100 deployable troop cards, assuming 200 images per troop class to allow the CNN to learn how the card looks when placed, this would mean I would have to collect 20,000 images by hand. I am not doing allat rn
 
-**Current Accuracy:** ~60-70% (6 card classes)
+**Current Accuracy:** ~99% accuracy (6 card classes)
 
 ## Installation
 
