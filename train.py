@@ -14,7 +14,7 @@ CONFIG = {
     'data_dir': 'data',
     'model_save_dir': 'models',
     'batch_size': 16,
-    'num_epochs': 25,
+    'num_epochs': 10,
     'learning_rate': 0.001,
     'image_size': 224,
     'num_workers': 0,
@@ -24,7 +24,9 @@ CONFIG = {
     'train_gold_per_class': 160,
     'train_normal_per_class': 40,
     'val_gold_per_class': 14,
-    'val_normal_per_class': 6
+    'val_normal_per_class': 6,
+
+    'model_type': 'resnet18' # can be 'resnet18', 'resnet34' or 'mobilenet_v2'
 }
 
 # card classes (folder names)
@@ -103,22 +105,58 @@ model = models.mobilenet_v2(pretrained=True)
 for param in model.features.parameters():
     param.requires_grad = False
 
-# replace classifier
 num_classes = len(CLASSES)
-model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+
+# loading model types
+
+if CONFIG['model_type'] == 'resnet18':
+    model = models.resnet18(pretrained=True)
+
+    # freeze early layers
+
+    for param in model.parameters():
+        param.requires_grad = False
+    
+    # unfreeze layer4, the last conv block
+    for param in model.layer4.parameters():
+        param.requires_grad = True
+    
+    # replace final FC layer
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, num_classes)
+
+    trainable_params = list(model.layer4.parameters()) + list(model.fc.parameters())
+
+elif CONFIG['model_type'] == 'resnet34':
+    model = models.resnet34(pretrained=True)
+    
+    for param in model.parameters():
+        param.requires_grad = False
+    
+    for param in model.layer4.parameters():
+        param.requires_grad = True
+    
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, num_classes)
+    
+    trainable_params = list(model.layer4.parameters()) + list(model.fc.parameters())
+
+else: # mobilenet_v2
+    model = models.mobilenet_v2(pretrained=True)
+    
+    for param in model.features.parameters():
+        param.requires_grad = False
+    
+    model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+    
+    trainable_params = model.classifier.parameters()
 
 # move to device
 model = model.to(CONFIG['device'])
 
-print(f"Model architecture:")
-print(f"  Backbone: MobileNetV2 (frozen)")
-print(f"  Classifier: {model.classifier[1]}")
-print(f"  Total classes: {num_classes}\n")
-
-
 # loss and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.classifier.parameters(), lr=CONFIG['learning_rate'])
+optimizer = optim.Adam(trainable_params, lr=CONFIG['learning_rate'])
 
 # learning rate scheduler
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)

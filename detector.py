@@ -54,9 +54,29 @@ def load_classifier(model_path, device='cuda'):
     class_names = checkpoint['class_names']
     num_classes = len(class_names)
 
-    # recreate model architecture
-    model = models.mobilenet_v2(weights=None)
-    model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+
+    # get model type from config in best_model dict
+
+    config = checkpoint.get('config', {})
+    model_type = config.get('model_type', 'mobilenet_v2')
+
+    print(f"Loading model type: {model_type}")
+
+    if model_type == 'resnet18':
+        model = models.resnet18(weights=None)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
+    
+    elif model_type == 'resnet34':
+        model = models.resnet34(weights=None)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
+    elif model_type == 'mobilenet_v2':
+        model = models.mobilenet_v2(weights=None)
+        model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
 
     # load weights
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -65,11 +85,12 @@ def load_classifier(model_path, device='cuda'):
 
     # mimic validation transforms
     transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
+
+    print(f"Model loaded successfully: {model_type} with {num_classes} classes")
     return model, class_names, transform
 
 class DeploymentDetector:

@@ -65,8 +65,8 @@ python detector.py --model models/best_model_*.pth --no-save
 
 ### Current Image Requirements
 
-**Per card class:** 100 images total
-- **Training:** 56 gold + 24 normal (80 total)
+**Per card class:** 200 images total
+- **Training:** 160 gold + 40 normal (200 total)
 - **Validation:** 14 gold + 6 normal (20 total)
 
 **Timing:** Screenshot during **drop animation** (0.1-0.3s after deployment)
@@ -77,55 +77,11 @@ python detector.py --model models/best_model_*.pth --no-save
 **Folder structure:**
 ```
 data/train/cannon/
-  ├── gold/      # Gold cosmetic troops (56 images)
-  └── normal/    # Normal color troops (24 images)
+  ├── gold/      # Gold cosmetic troops (160 images)
+  └── normal/    # Normal color troops (40 images)
 ```
 
-## Next Steps
-
-### Short-term Improvements
-
-1. **Switch to ResNet18** (better accuracy)
-```python
-   # In train.py, replace MobileNetV2:
-   model = models.resnet18(pretrained=True)
-   # Freeze early layers, train final layers
-```
-   **Expected gain:** +5-10% accuracy
-
-2. **Collect More Data**
-   - Target: 200 images per class
-   - Focus on gold cosmetics (more common in practice)
-   - **Expected gain:** +10-15% accuracy
-
-3. **Optimize Transforms**
-```python
-   # Try direct resize (no random crop) for centered troops:
-   transforms.Resize(224)  # Instead of Resize(256) + RandomCrop(224)
-```
-
-4. **Fine-tune Hyperparameters**
-   - Increase epochs: 40 instead of 25
-   - Try AdamW optimizer with weight decay
-   - Experiment with learning rate schedules
-
-### Future Features
-
-- **Fireball/Log Detection** - Separate CV pipeline (orange/brown detection)
-- **Card Cycle Counter** - Track when specific card returns to hand (4 placements)
-- **Evolution/Hero Variants** - Expand to handle special card variants
-
-### Known Limitations
-
-- **Not viable for elixir tracking** (requires 100% accuracy, CNN can't guarantee this)
-- **Fast troops** (skeletons, ice spirit) may move out of detection region quickly
-- **Overlapping deployments** can cause missed classifications
-
----
-
-## Technical Details
-
-### Model Architecture
+## Model Architecture
 - **Backbone:** MobileNetV2 (pretrained on ImageNet)
 - **Frozen:** Feature extraction layers
 - **Trainable:** Final classification layer (6 classes)
