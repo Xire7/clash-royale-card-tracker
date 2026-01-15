@@ -31,14 +31,14 @@ This card tracker only detects Hog 2.6 at the moment ! Clash Royale has 100 depl
 
 ### 1. Train the Model
 
-Trains a MobileNetV2 classifier on collected troop images.
+Trains a ResNet18 classifier on collected troop images.
 ```bash
 python train.py
 ```
 
 **What it does:**
 - Loads images from `data/train/` and `data/val/`
-- Trains for 25 epochs
+- Trains for 10 epochs
 - Saves best model to `models/best_model_TIMESTAMP.pth`
 - Generates training curves plot
 
