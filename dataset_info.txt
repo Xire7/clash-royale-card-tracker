@@ -9,7 +9,7 @@ Cannon
 ==============
 Normal: 92
 Gold: 150 X 
-Evo: 8
+Evo: 8 X
 
 Hog Rider
 ==============
@@ -30,14 +30,14 @@ Musketeer
 ==============
 Normal: 45
 Gold: 103 ? (test gold + hero tbh)
-Evo: 0
+Evo: 0 X
 Hero: 72
 
 Skeletons
 ==============
 Normal: 122
 Gold: 187
-Evo: 56
+Evo: 33
 
 
 

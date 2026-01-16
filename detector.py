@@ -44,7 +44,7 @@ KX1_FACTOR_GAME = 4/10
 KX2_FACTOR_GAME = 6/10
 
 # EVO CONSTANTS
-EVO_DELAY_FRAMES = 6
+EVO_DELAY_FRAMES = 7
 EVO_THRESHOLD = 0.65
 
 def load_classifier(model_path, device='cuda'):
