@@ -25,7 +25,7 @@ IN_CYCLE_COLOR = (59, 59, 179)
 WHITE_COLOR = (255,255,255)
 
 # cooldowns
-TROOP_DETECTION_COOLDOWN = 0.2
+TROOP_DETECTION_COOLDOWN = 0.3
 LOG_DETECTION_COOLDOWN = 3
 FIREBALL_DETECTION_COOLDOWN = 3
 
@@ -42,6 +42,10 @@ KY2_FACTOR_GAME = 2/14
 
 KX1_FACTOR_GAME = 4/10
 KX2_FACTOR_GAME = 6/10
+
+# EVO CONSTANTS
+EVO_DELAY_FRAMES = 6
+EVO_THRESHOLD = 0.65
 
 def load_classifier(model_path, device='cuda'):
     print(torch.cuda.is_available())
@@ -102,6 +106,7 @@ class DeploymentDetector:
         self.last_fireball_detection_time = 0
         self.last_detected_cards = []
         self.detection_cooldown = 0.3
+        self.pending_evo_classifications = []
 
         # card tracker variables
         self.slots = ["None", "None", "None", "None"]
@@ -191,7 +196,9 @@ class DeploymentDetector:
                 red_count = np.sum(red_roi > 0)
                 red_ratio = red_count / (check_w * check_h)
 
-                red_pass = 0.03 < red_ratio < 0.20 # should be only a little red
+                red_pass = 0.03 < red_ratio < 0.18 # should be only a little red
+
+                # 0.03 - 0.20
 
                 if red_pass:
                     # deployment detected
@@ -440,13 +447,48 @@ class DeploymentDetector:
                     self.last_fireball_detection_time = current_time
 
             stored_predictions = []
+
+            # check pending EVOs and add to detections
+            for pending_evo in self.pending_evo_classifications:
+                pending_evo['frames_remaining'] -= 1
+
+                if pending_evo['frames_remaining'] <= 0:
+                    x,y,w,h = pending_evo['clock_bbox']
+                    troop_region, (tx, ty, tw, th) = self.extract_troop_region(frame, (x,y,w,h))
+                    predicted_card, confidence = self.classify_card(troop_region)
+
+                    if confidence < EVO_THRESHOLD:
+                        print(f"RETRIED, UNCERTAIN || 1st Prediction: {pending_evo['uncertain_card'].upper()} | 2nd Prediction: {predicted_card.upper()} .. Continuing with assumption ..")
+
+                    frames_remaining = 90
+                    red_ratio = -1
+
+                    self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, predicted_card, confidence, red_ratio, frames_remaining)
+                    stored_predictions.append({
+                        'clock_bbox': pending_evo['clock_bbox'],
+                        'troop_bbox': (tx, ty, tw, th),
+                        'card': predicted_card,
+                        'confidence': confidence,
+                        'red_ratio': red_ratio,
+                        'frames_remaining': frames_remaining - 1
+                    })
+                    self.detection_count += 1
+                    print(f"EVO(?) Detection #{self.detection_count} | Card: {predicted_card.upper()} ({confidence:.1%})")
+
+                    troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_evo_flagged.png")
+                    cv2.imwrite(troop_path, troop_region)
+                
+            
+            self.pending_evo_classifications = [c for c in self.pending_evo_classifications if c['frames_remaining'] > 0]
+
+
             # only classify and add to history at the end. create these bounding boxes first too
             if self.save_detections and (current_time - self.last_detection_time) > self.detection_cooldown:
+
                 detections, white_mask, red_mask = self.detect_opponent_clocks(frame)
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
 
                 for detection in detections:
-                    self.detection_count += 1
                     x, y, w, h = detection['bbox']
                     red_ratio = detection['red_ratio']
                     frames_remaining = 90
@@ -454,6 +496,17 @@ class DeploymentDetector:
                     if self.classify_enabled:
                         predicted_card, confidence = self.classify_card(troop_region)
                     
+                    if confidence < EVO_THRESHOLD:
+                        print(f"LOW CONFIDENCE (Evo?) Predicted Card: {predicted_card.upper()}. Retrying in {EVO_DELAY_FRAMES} frames..")
+                        self.pending_evo_classifications.append({
+                            'clock_bbox': (x, y, w, h),
+                            'frames_remaining': EVO_DELAY_FRAMES - 1,
+                            'uncertain_card': predicted_card
+                        })
+                        self.last_detection_time = current_time
+                        continue
+
+                    self.detection_count += 1
                     self._draw_bounding_box(overlay, x, y, w, h, tx, ty, tw, th, predicted_card, confidence, red_ratio, frames_remaining)
                     stored_predictions.append({
                         'clock_bbox': (x, y, w, h),
@@ -470,10 +523,6 @@ class DeploymentDetector:
                     log_msg += f" | Red: {red_ratio:.1%}"
                     print(log_msg)
 
-                    self.last_detection_time = current_time
-
-                    # full_path = os.path.join(self.output_dir, f"full_{self.detection_count:03d}_{timestamp}.png")
-                    # cv2.imwrite(full_path, overlay)
                     troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_{timestamp}.png")
                     cv2.imwrite(troop_path, troop_region)      
                     self.last_detection_time = current_time  

@@ -12,38 +12,19 @@ def sample_hsv_colors(image_path):
     height = img.shape[0]
     width = img.shape[1]
 
-    # REPLAY CONSTANTS
-    KY1_FACTOR_REPLAY = 2/10
-    KY2_FACTOR_REPLAY = 4/15
-
-    KX1_FACTOR_REPLAY = 4/10
-    KX2_FACTOR_REPLAY = 6/10
-
-    # REAL GAME CONSTANTS
-    KY1_FACTOR_GAME = 1/14
-    KY2_FACTOR_GAME = 2/14
-
-    KX1_FACTOR_GAME = 4/10
-    KX2_FACTOR_GAME = 6/10
-
-
-    img = img[int(height*KY1_FACTOR_REPLAY):int(height*KY2_FACTOR_REPLAY), int(width*KX1_FACTOR_REPLAY):int(width*KX2_FACTOR_REPLAY)] # replay king tower coordinates
-    # img = img[int(height*1/14):int(height*2/14), int(width*4/10):int(width*6/10)] # actual game king tower coordinates
-
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    kernel = np.ones((3,3), np.uint8)
+    kernel = np.ones((6,6), np.uint8)
 
-    lower_orange = np.array([16, 100, 250])
-    upper_orange = np.array([30, 255, 255])
+    lower_gold = np.array([10, 72, 167])
+    upper_gold = np.array([17, 205, 250])
 
-    orange_mask = cv2.inRange(hsv, lower_orange, upper_orange)
-    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_OPEN, kernel)
-    orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_CLOSE, kernel)
+    gold_mask = cv2.inRange(hsv, lower_gold, upper_gold)
+    gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_CLOSE, kernel, iterations=6)
 
-    contours, _ = cv2.findContours(orange_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    min_area = 600
+    min_area = 100
     margin = 0
     for contour in contours:
         area = cv2.contourArea(contour)
@@ -61,7 +42,7 @@ def sample_hsv_colors(image_path):
         cv2.rectangle(img, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
         cv2.putText(img, f"area: {area}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
 
-    cv2.imshow("Orange Mask", orange_mask)
+    cv2.imshow("Gold Mask", gold_mask)
 
     # cv2.imshow("Contours Debugged", debug_contours)
     
@@ -92,4 +73,4 @@ def sample_hsv_colors(image_path):
 
     return
 
-sample_hsv_colors('fireball10.png')
+sample_hsv_colors('evo1.png')
