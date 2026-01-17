@@ -45,7 +45,7 @@ KX2_FACTOR_GAME = 6/10
 
 # EVO CONSTANTS
 EVO_DELAY_FRAMES = 7
-EVO_THRESHOLD = 0.65
+EVO_THRESHOLD = 100.0
 
 def load_classifier(model_path, device='cuda'):
     print(torch.cuda.is_available())
@@ -425,6 +425,7 @@ class DeploymentDetector:
         while True:
             screenshot = np.array(sct.grab(monitor))
             frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
 
             current_time = time.time()
 
@@ -475,7 +476,7 @@ class DeploymentDetector:
                     self.detection_count += 1
                     print(f"EVO(?) Detection #{self.detection_count} | Card: {predicted_card.upper()} ({confidence:.1%})")
 
-                    troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_evo_flagged.png")
+                    troop_path = os.path.join(self.output_dir, f"troop_{self.detection_count:03d}_evo_flagged_{timestamp}.png")
                     cv2.imwrite(troop_path, troop_region)
                 
             
@@ -486,7 +487,6 @@ class DeploymentDetector:
             if self.save_detections and (current_time - self.last_detection_time) > self.detection_cooldown:
 
                 detections, white_mask, red_mask = self.detect_opponent_clocks(frame)
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
 
                 for detection in detections:
                     x, y, w, h = detection['bbox']
