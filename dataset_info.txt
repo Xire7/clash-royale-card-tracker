@@ -2,14 +2,14 @@ Image Collection
 
 Dataset Counts:
 
-Ideal Train: 160G/40N/50E OR 210G/40N OR 90G/70H/40N/50E
+Ideal Train: 160G/40N/50E OR 185/65N OR 90G/70H/40N/50E
 Ideal Val: 14G/6N (20 total)
 
 Cannon
 ==============
 Normal: 92
 Gold: 162
-Evo: 29 X
+Evo: 58 
 
 Hog Rider
 ==============
@@ -30,7 +30,7 @@ Musketeer
 ==============
 Normal: 45
 Gold: 103
-Evo: 8 X
+Evo: 18 X
 Hero: 72
 
 Skeletons

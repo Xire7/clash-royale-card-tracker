@@ -7,8 +7,14 @@ import glob
 from datetime import datetime
 
 
-# in my dataset, want to include 60 hero musketeers
-HERO_MUSKETEER_LIMIT = 70
+# in my dataset, want to include 70 hero musketeers
+MUSKETEER_HERO_COUNT = 70
+
+# Ideal Train: 160G/40N/50E OR 185G/65N OR 90G/70H/40N/50E
+
+EVO_COUNT = 50
+
+LIMIT_BOOST = 25 # card with no evos need to sum to 250
 
 class CardDataset(Dataset):
     def __init__(self, root_dir, classes, gold_limit, normal_limit, transform=None):
@@ -24,28 +30,49 @@ class CardDataset(Dataset):
 
             gold_dir = os.path.join(class_dir, 'gold')
             normal_dir = os.path.join(class_dir, 'normal')
+            evo_dir = os.path.join(class_dir, 'evo')
+            hero_dir = os.path.join(class_dir, 'hero')
 
-            if os.path.exists(gold_dir):
-                if class_name == "musketeer":
-                    hero_dir = os.path.join(class_dir, 'hero')
-                    hero_images = glob.glob(os.path.join(hero_dir, '*.png'))[:HERO_MUSKETEER_LIMIT]
-                    for img_path in hero_images:
-                        self.samples.append((img_path, class_idx))
-                    
-                    modified_gold_limit = gold_limit - HERO_MUSKETEER_LIMIT
-                    gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:modified_gold_limit] # subtract hero number
-                    for img_path in gold_images:
-                        self.samples.append((img_path, class_idx))
-                else:
-                    gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:gold_limit] # only gold_limit num of images
-                    for img_path in gold_images:
-                        self.samples.append((img_path, class_idx))
+            if class_name == "musketeer":
+                hero_images = glob.glob(os.path.join(hero_dir, '*.png'))[:MUSKETEER_HERO_COUNT]
+                for img_path in hero_images:
+                    self.samples.append((img_path, class_idx))
+
+                evo_images = glob.glob(os.path.join(evo_dir, '*.png'))[:EVO_COUNT]
+                for img_path in evo_images:
+                    self.samples.append((img_path, class_idx))
                 
-            if os.path.exists(normal_dir):
-                normal_images = glob.glob(os.path.join(normal_dir, '*.png'))[:normal_limit] # only normal_limit num of images
+                modified_gold_limit = gold_limit - MUSKETEER_HERO_COUNT
+                gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:modified_gold_limit] # subtract hero number
+                for img_path in gold_images:
+                    self.samples.append((img_path, class_idx))
+
+                normal_images = glob.glob(os.path.join(normal_dir, '*.png'))[:normal_limit]
                 for img_path in normal_images:
                     self.samples.append((img_path, class_idx))
-        
+
+            elif class_name == "cannon" or class_name == "skeletons":
+                evo_images = glob.glob(os.path.join(evo_dir, '*.png'))[:EVO_COUNT]
+                for img_path in evo_images:
+                    self.samples.append((img_path, class_idx))
+                
+                gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:gold_limit]
+                for img_path in gold_images:
+                    self.samples.append((img_path, class_idx))
+
+                normal_images = glob.glob(os.path.join(normal_dir, '*.png'))[:normal_limit]
+                for img_path in normal_images:
+                    self.samples.append((img_path, class_idx))
+            
+            else: # hog rider, ice golem, ice spirit
+                gold_images = glob.glob(os.path.join(gold_dir, '*.png'))[:gold_limit + LIMIT_BOOST]
+                for img_path in gold_images:
+                    self.samples.append((img_path, class_idx))
+
+                normal_images = glob.glob(os.path.join(normal_dir, '*.png'))[:normal_limit + LIMIT_BOOST]
+                for img_path in normal_images:
+                    self.samples.append((img_path, class_idx))
+
         print(f"Loaded {len(self.samples)} samples from {root_dir}")
     
     def __len__(self):
