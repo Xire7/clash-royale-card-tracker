@@ -354,6 +354,54 @@ class DeploymentDetector:
             break
 
         return fireball_detected
+    
+    def detect_evo_border(self, image):
+
+        print("hello chat")
+        kernel = np.ones((7,7), np.uint8)
+
+        lower_gold = np.array([10, 72, 167])
+        upper_gold = np.array([17, 205, 250])
+
+        gold_mask = cv2.inRange(image, lower_gold, upper_gold)
+        gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+
+        lower_red = np.array([172, 170, 80])
+        upper_red = np.array([177, 255, 230])
+
+        red_mask = cv2.inRange(image, lower_red, upper_red)
+
+        contours, _ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        min_area = 300
+        margin = 0
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            x, y, w, h = cv2.boundingRect(contour)
+
+            bx = x - margin
+            by = y - margin
+            bw = w + 2*margin
+            bh = h + 2*margin
+
+            if area < min_area:
+                continue
+
+            red_roi = red_mask[by:by+h, bx:bx+w]
+            red_count = np.sum(red_roi > 0)
+
+            red_ratio = red_count / area
+
+            print(f"Red Ratio found: {red_ratio}")
+
+            if 0.2 < red_ratio < 0.3:
+                print(f"Evo border detected")
+                return True
+            
+        return False
+
+
+
 
     def extract_troop_region(self, frame, clock_bbox):
         OFFSET_Y = 10 # adjusting region upward to frame below/at half of the clock
@@ -496,8 +544,8 @@ class DeploymentDetector:
                     if self.classify_enabled:
                         predicted_card, confidence = self.classify_card(troop_region)
                     
-                    if confidence < EVO_THRESHOLD:
-                        print(f"LOW CONFIDENCE (Evo?) Predicted Card: {predicted_card.upper()}. Retrying in {EVO_DELAY_FRAMES} frames..")
+                    if confidence < EVO_THRESHOLD or self.detect_evo_border(troop_region):
+                        print(f"(EVO?) Predicted Card: {predicted_card.upper()}. Retrying in {EVO_DELAY_FRAMES} frames..")
                         self.pending_evo_classifications.append({
                             'clock_bbox': (x, y, w, h),
                             'frames_remaining': EVO_DELAY_FRAMES - 1,

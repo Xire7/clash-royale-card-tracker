@@ -14,17 +14,24 @@ def sample_hsv_colors(image_path):
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    kernel = np.ones((6,6), np.uint8)
+    kernel = np.ones((7,7), np.uint8)
 
     lower_gold = np.array([10, 72, 167])
     upper_gold = np.array([17, 205, 250])
 
     gold_mask = cv2.inRange(hsv, lower_gold, upper_gold)
-    gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_CLOSE, kernel, iterations=6)
+    gold_mask = cv2.morphologyEx(gold_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+
+
+    lower_red = np.array([172, 170, 80])
+    upper_red = np.array([177, 255, 230])
+
+    red_mask = cv2.inRange(hsv, lower_red, upper_red)
+
 
     contours, _ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    min_area = 100
+    min_area = 300
     margin = 0
     for contour in contours:
         area = cv2.contourArea(contour)
@@ -38,13 +45,21 @@ def sample_hsv_colors(image_path):
         if area < min_area:
             continue
 
-        cv2.drawContours(img, [contour], -1, (0,255,0), 2)
-        cv2.rectangle(img, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
-        cv2.putText(img, f"area: {area}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+        red_roi = red_mask[by:by+h, bx:bx+w]
+        red_count = np.sum(red_roi > 0)
+
+        red_ratio = red_count / area
+
+        print(f"red_ratio: {red_ratio:.1%}")
+
+        if 0.2 < red_ratio < 0.3:
+            cv2.drawContours(img, [contour], -1, (0,255,0), 2)
+            cv2.rectangle(img, (bx, by), (bx+bw, by+bh), (255,0,0), 2)
+            cv2.putText(img, f"red: {red_ratio:.1%}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
 
     cv2.imshow("Gold Mask", gold_mask)
+    cv2.imshow("Red Mask", red_mask)
 
-    # cv2.imshow("Contours Debugged", debug_contours)
     
     def mouse_callback(event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
